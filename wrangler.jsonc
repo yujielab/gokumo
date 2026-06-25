@@ -1,0 +1,45 @@
+{
+  // Wrangler 配置（JSONC，可写注释）。文档：https://developers.cloudflare.com/workers/wrangler/configuration/
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  "name": "gomoku-online",
+  "main": "worker.js",
+
+  // 用较新的兼容性日期以启用 Durable Objects RPC、WebSocket Hibernation 等特性。
+  // 可改成你部署当天或更早的任意日期。
+  "compatibility_date": "2025-09-01",
+
+  // 静态站点：托管 public/ 目录（index.html、__mp.js 等）。
+  //  · binding=ASSETS：在 Worker 里通过 env.ASSETS.fetch() 读取静态文件；
+  //  · run_worker_first=true：所有请求先进 Worker（以便路由 /ws 并向 HTML 注入联机脚本），
+  //    其余路径再由 Worker 调用 env.ASSETS 返回文件。
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application"
+  },
+
+  // 两个 Durable Object：GameRoom（每个房间一个实例）、Matchmaker（全局单例，快速匹配队列）。
+  "durable_objects": {
+    "bindings": [
+      { "name": "GAME_ROOM", "class_name": "GameRoom" },
+      { "name": "MATCHMAKER", "class_name": "Matchmaker" }
+    ]
+  },
+
+  // 用 SQLite 存储后端创建这两个 DO 类。
+  // SQLite 版 Durable Objects 在 Workers 免费套餐即可使用。
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["GameRoom", "Matchmaker"]
+    }
+  ],
+
+  // 可选：开启可观测性（日志/调用量），便于在仪表盘排查。
+  "observability": {
+    "enabled": true
+  }
+}
