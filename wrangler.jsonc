@@ -2,7 +2,7 @@
   // Wrangler 配置（JSONC，可写注释）。文档：https://developers.cloudflare.com/workers/wrangler/configuration/
   "$schema": "node_modules/wrangler/config-schema.json",
 
-  "name": "gomoku-online",
+  "name": "gokumo",
   "main": "worker.js",
 
   // 用较新的兼容性日期以启用 Durable Objects RPC、WebSocket Hibernation 等特性。
