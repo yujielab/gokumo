@@ -1,0 +1,1678 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>五子 · Gomoku</title>
+<style>
+  :root{
+    --bg:#ffffff; --bg-2:#f5f5f7;
+    --glass:rgba(255,255,255,0.72); --glass-strong:rgba(255,255,255,0.86);
+    --hairline:rgba(0,0,0,0.08);
+    --t1:#1d1d1f; --t2:rgba(60,60,67,0.60); --t3:rgba(60,60,67,0.30);
+    --blue:#0071e3; --blue-2:#0a84ff; --blue-soft:rgba(0,113,227,0.12);
+    --indigo:#5856d6; --indigo-soft:rgba(88,86,214,0.12);
+    --grid:rgba(0,0,0,0.05); --grid-major:rgba(0,0,0,0.10);
+    --spring:cubic-bezier(0.34, 1.12, 0.64, 1);
+    --spring-soft:cubic-bezier(0.22, 1, 0.36, 1);
+    --dur:0.52s; --dur-fast:0.28s;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; overflow:hidden; background:var(--bg); }
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue","PingFang SC",system-ui,sans-serif;
+    color:var(--t1); -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    user-select:none; -webkit-user-select:none; position:fixed; inset:0;
+  }
+  #board{ position:fixed; inset:0; display:block; touch-action:none; }
+
+  .glass{
+    background:var(--glass);
+    -webkit-backdrop-filter:blur(36px) saturate(180%); backdrop-filter:blur(36px) saturate(180%);
+    border:0.5px solid rgba(0,0,0,0.06);
+    box-shadow:0 8px 28px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.7);
+  }
+
+  /* ———————————————— 顶部状态灵动岛 ———————————————— */
+  #island{
+    position:fixed; left:50%; top:calc(env(safe-area-inset-top,0px) + 14px);
+    transform:translateX(-50%) translateZ(0);
+    height:44px; width:182px; border-radius:22px;
+    display:flex; align-items:center; justify-content:center; overflow:hidden; z-index:40;
+    will-change:width,height,border-radius,transform;
+    transition:width var(--dur) var(--spring), height var(--dur) var(--spring),
+               border-radius var(--dur) var(--spring), box-shadow var(--dur-fast) ease;
+  }
+  #island[data-state^="win"]{ width:min(84vw,340px); height:170px; border-radius:28px; }
+  #island.pop{ animation:islandPop var(--dur) var(--spring); }
+  @keyframes islandPop{ 0%{ transform:translateX(-50%) scale(0.97);} 55%{ transform:translateX(-50%) scale(1.015);} 100%{ transform:translateX(-50%) scale(1);} }
+
+  .turn-row{ display:flex; align-items:center; gap:9px; padding:0 6px; white-space:nowrap; }
+  .turn-dot{ width:10px; height:10px; border-radius:50%; background:var(--blue);
+    box-shadow:0 0 0 3px rgba(0,113,227,0.12); transition:background var(--dur-fast) ease, box-shadow var(--dur-fast) ease; }
+  #island[data-side="ai"] .turn-dot{ background:var(--t1); box-shadow:0 0 0 3px rgba(0,0,0,0.06); }
+  .island-label{ font-size:15px; font-weight:580; letter-spacing:0.2px; color:var(--t1); }
+
+  .thinking{ display:none; align-items:center; gap:9px; padding:0 8px; }
+  #island[data-state="thinking"] .turn-row{ display:none; }
+  #island[data-state="thinking"] .thinking{ display:flex; }
+  .goo-wrap{ width:44px; height:22px; position:relative; filter:url(#goo); }
+  .goo-wrap .blob{ position:absolute; top:50%; left:50%; width:13px; height:13px; margin:-6.5px 0 0 -6.5px; border-radius:50%; background:var(--t1); }
+  .goo-wrap .blob:nth-child(1){ animation:blobA 1.15s var(--spring-soft) infinite; }
+  .goo-wrap .blob:nth-child(2){ animation:blobB 1.15s var(--spring-soft) infinite; }
+  @keyframes blobA{ 0%,100%{ transform:translateX(-8px) scale(1);} 50%{ transform:translateX(2px) scale(1.16);} }
+  @keyframes blobB{ 0%,100%{ transform:translateX(8px) scale(1);} 50%{ transform:translateX(-2px) scale(1.16);} }
+  .thinking .t-label{ font-size:15px; font-weight:560; color:var(--t2); letter-spacing:0.2px; }
+
+  .result{ display:none; flex-direction:column; align-items:center; justify-content:center; gap:3px; padding:20px 22px 18px; text-align:center; width:100%; }
+  #island[data-state^="win"] .turn-row, #island[data-state^="win"] .thinking{ display:none; }
+  #island[data-state^="win"] .result{ display:flex; }
+  .result .badge{ width:50px; height:50px; border-radius:17px; display:flex; align-items:center; justify-content:center; margin-bottom:5px;
+    background:var(--blue-soft); color:var(--blue); }
+  #island[data-state="win-ai"] .result .badge{ background:rgba(0,0,0,0.05); color:var(--t1); }
+  .result .title{ font-size:21px; font-weight:680; letter-spacing:0.2px; color:var(--t1); }
+  .result .sub{ font-size:13px; color:var(--t2); margin-bottom:13px; }
+  .result .again{ appearance:none; border:none; cursor:pointer; font-family:inherit; font-size:15px; font-weight:600; color:#fff;
+    padding:10px 24px; border-radius:980px; background:var(--blue);
+    box-shadow:0 1px 2px rgba(0,0,0,0.12); transition:transform var(--dur-fast) var(--spring), background var(--dur-fast) ease; }
+  #island[data-state="win-ai"] .result .again{ background:var(--t1); }
+  .result .again:active{ transform:scale(1.04) translateZ(0); }
+
+  /* ———————————————— 底部状态机 Dock（纯圆 ⇄ 工具栏）———————————————— */
+  #dock{
+    position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 20px);
+    transform:translateX(-50%) translateZ(0);
+    height:60px; width:60px; padding:6px; border-radius:30px; gap:0;
+    display:flex; align-items:center; justify-content:center; overflow:hidden; z-index:40;
+    will-change:width,transform; transition:width var(--dur) var(--spring), box-shadow var(--dur-fast) ease;
+  }
+  #dock[data-variant="toolbar"]{ width:228px; gap:8px; }
+  #dock.morph{ animation:dockMorph var(--dur) var(--spring); }
+  @keyframes dockMorph{ 0%{ transform:translateX(-50%) scale(1.06,0.92);} 58%{ transform:translateX(-50%) scale(0.99,1.02);} 100%{ transform:translateX(-50%) scale(1,1);} }
+
+  .dbtn{ flex:0 0 auto; width:48px; height:48px; border-radius:24px; position:relative;
+    appearance:none; border:none; background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--t1);
+    transition:width var(--dur) var(--spring), opacity var(--dur-fast) var(--spring), transform var(--dur-fast) var(--spring), background var(--dur-fast) ease, border-radius var(--dur-fast) var(--spring); }
+  .dbtn svg{ width:22px; height:22px; }
+  .dbtn:active{ transform:scale(1.06) translateZ(0); border-radius:21px; background:rgba(0,0,0,0.05); }
+  .dbtn.fab{ color:var(--blue); }
+  .dbtn.fab:active{ background:var(--blue-soft); }
+
+  /* 收起态：工具按钮宽度归零，仅留居中 FAB（适配任意按钮数量） */
+  #dock .tool{ width:0; opacity:0; margin:0; pointer-events:none; overflow:hidden; }
+  #dock[data-variant="toolbar"] .tool{ width:48px; opacity:1; pointer-events:auto; }
+  #dock[data-variant="toolbar"] .tool:nth-child(2){ transition-delay:0.04s; }
+  #dock[data-variant="toolbar"] .tool:nth-child(1){ transition-delay:0.08s; }
+  #dock[data-variant="toolbar"] .fab svg{ transform:rotate(90deg); }
+  .fab svg{ transition:transform var(--dur) var(--spring); }
+
+  /* 超越模式切换按钮（默认开启 → 靛蓝高亮） */
+  .dbtn.transcend{ color:var(--t2); }
+  body.transcend .dbtn.transcend{ color:var(--indigo); background:var(--indigo-soft); }
+  body.transcend #dock{ box-shadow:0 8px 28px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.7), 0 0 0 1px rgba(88,86,214,0.14); }
+  body.transcend #dock .fab{ color:var(--indigo); }
+
+  /* AI 嘲讽气泡：从灵动岛底部"分裂"弹出 */
+  #taunt{
+    position:fixed; left:50%; top:calc(env(safe-area-inset-top,0px) + 68px);
+    transform:translateX(-50%) translateY(-16px) scale(0.4); transform-origin:top center;
+    max-width:min(84vw,360px); display:flex; align-items:flex-start; gap:9px; padding:10px 15px; border-radius:18px;
+    z-index:39; opacity:0; pointer-events:none; text-align:left;
+    font-size:13.5px; font-weight:510; line-height:1.4; color:var(--t1); letter-spacing:0.1px;
+    transition:opacity 0.3s ease, transform 0.52s var(--spring), top 0.3s ease;
+  }
+  #taunt.show{ opacity:1; transform:translateX(-50%) translateY(0) scale(1); }
+  #taunt.low{ top:calc(env(safe-area-inset-top,0px) + 200px); }
+  .taunt-dot{ flex:0 0 auto; width:9px; height:9px; margin-top:4px; border-radius:50%; background:#3a3a3c; box-shadow:0 0 0 3px rgba(0,0,0,0.05); }
+  #tauntText{ white-space:normal; }
+
+  /* 算力 HUD */
+  #hud{ position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 88px); transform:translateX(-50%) translateY(6px);
+    opacity:0; display:flex; align-items:center; gap:7px; padding:6px 12px; border-radius:13px; z-index:35;
+    font-size:11.5px; font-weight:520; color:var(--t2); white-space:nowrap; pointer-events:none; letter-spacing:0.2px;
+    transition:opacity 0.35s ease, transform 0.35s var(--spring); }
+  #hud.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  #hud .dotpulse{ width:6px; height:6px; border-radius:50%; background:var(--blue); }
+  body.transcend #hud .dotpulse{ background:var(--indigo); }
+  #hud b{ font-weight:680; color:var(--t1); }
+
+  #toast{ position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 122px); transform:translateX(-50%) translateY(8px); opacity:0;
+    padding:9px 16px; border-radius:14px; z-index:45; font-size:13.5px; font-weight:520; color:var(--t1); white-space:nowrap; pointer-events:none;
+    transition:opacity 0.3s ease, transform 0.3s var(--spring); }
+  #toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  :focus-visible{ outline:2px solid var(--blue); outline-offset:2px; }
+  @media (prefers-reduced-motion:reduce){ *{ transition-duration:0.001s !important; animation-duration:0.001s !important; } }
+</style>
+</head>
+<body class="transcend">
+
+  <canvas id="board"></canvas>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <filter id="goo">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="4.5" result="b"/>
+        <feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -9" result="goo"/>
+        <feBlend in="SourceGraphic" in2="goo"/>
+      </filter>
+    </defs>
+  </svg>
+
+  <!-- 状态灵动岛 -->
+  <div id="island" class="glass" data-state="turn-human" data-side="human" aria-live="polite">
+    <div class="turn-row"><span class="turn-dot"></span><span class="island-label" id="islandLabel">轮到你落子</span></div>
+    <div class="thinking">
+      <div class="goo-wrap"><span class="blob"></span><span class="blob"></span></div>
+      <span class="t-label" id="thinkLabel">推演中</span>
+    </div>
+    <div class="result">
+      <div class="badge" id="resultBadge"><svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12l3 3 5-6"/></svg></div>
+      <div class="title" id="resultTitle">你赢了</div>
+      <div class="sub" id="resultSub">五子连珠 · 第 0 手</div>
+      <button class="again" id="againBtn">再来一局</button>
+    </div>
+  </div>
+
+  <!-- 状态机 Dock：居中 / 超越 / 重开 -->
+  <div id="dock" class="glass" data-variant="single">
+    <button class="dbtn tool" data-act="center" aria-label="回到中心">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+    </button>
+    <button class="dbtn tool transcend" data-act="transcend" aria-label="超越模式" aria-pressed="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 5.6L20 9l-4.4 3.7L17 18l-5-3-5 3 1.4-5.3L4 9l5.6-1.4z"/></svg>
+    </button>
+    <button class="dbtn fab" id="fabBtn" aria-label="展开工具栏">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="5" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="19" cy="5" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/><circle cx="5" cy="19" r="1.5"/><circle cx="12" cy="19" r="1.5"/><circle cx="19" cy="19" r="1.5"/></svg>
+    </button>
+    <button class="dbtn tool" data-act="restart" aria-label="重开">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 4v5h5"/></svg>
+    </button>
+  </div>
+
+  <div id="taunt" class="glass" aria-live="polite"><span class="taunt-dot"></span><span id="tauntText"></span></div>
+  <div id="hud"><span class="dotpulse"></span><span id="hudText">就绪</span></div>
+  <div id="toast" class="glass"></div>
+
+<script>
+function EngineFactory(){
+  // ============================================================
+  //  增强五子棋引擎 v2
+  //  - 精确棋型识别（9 格线签名 → 活四/冲四/活三/眠三/活二/眠二/跳型）
+  //  - 准确威胁判定（区分活三与眠三，正确识别双威胁组合）
+  //  - VCF（连续冲四）+ VCT（连续活三/冲四）双向算杀
+  //  - 防守 VCT：拦截对手的强制活三连杀（修复双活三被秒杀）
+  //  - 威胁空间搜索 + 置换表 + 杀手/历史启发 + PVS + 增量评估
+  // ============================================================
+  const DIRS=[[1,0],[0,1],[1,1],[1,-1]];
+  const OFF=1<<13, STR=1<<14;
+  const enc=(x,y)=>(x+OFF)*STR+(y+OFF);
+  const decx=(e)=>Math.floor(e/STR)-OFF, decy=(e)=>e%STR-OFF;
+
+  // 棋型分值（数量级拉开，便于组合判定）
+  const S={ FIVE:10000000, OPEN_FOUR:300000, FOUR:25000, OPEN_THREE:6000, SLEEP_THREE:900, OPEN_TWO:550, SLEEP_TWO:120, OPEN_ONE:20 };
+  // 棋型枚举
+  const T={ NONE:0, ONE:1, SLEEP_TWO:2, OPEN_TWO:3, SLEEP_THREE:4, OPEN_THREE:5, FOUR:6, OPEN_FOUR:7, FIVE:8 };
+  const TVAL=[0, S.OPEN_ONE, S.SLEEP_TWO, S.OPEN_TWO, S.SLEEP_THREE, S.OPEN_THREE, S.FOUR, S.OPEN_FOUR, S.FIVE];
+
+  let OPPW=1.55, WIDTH=14, MAXD=10;
+  let EVAL=0, ME='a', OPP='h';
+
+  // ---------- 基础工具 ----------
+  // 在 (x,y) 处假设落子为 who，返回该方向上以 (x,y) 为中心、半径 4 的线状态：
+  //  1 = who 的子, 0 = 空, 2 = 对方子/越界（阻挡）
+  function lineCells(board, x, y, dx, dy, who, selfAt=true){
+    // 返回长度 9 的数组，index 4 为中心点
+    const arr=new Array(9);
+    for(let k=-4;k<=4;k++){
+      if(k===0){ arr[4]= selfAt?1:cellState(board,x,y,who); continue; }
+      arr[k+4]=cellState(board, x+dx*k, y+dy*k, who);
+    }
+    return arr;
+  }
+  function cellState(board,x,y,who){
+    const v=board.get(enc(x,y));
+    if(v===undefined) return 0;
+    return v===who?1:2;
+  }
+
+  // ---------- 精确单方向棋型识别 ----------
+  // 给定一条以中心点为 who 子的 9 格线，识别最强棋型（含跳四/跳三）。
+  function shapeOnLine(arr){
+    // arr: 9 长，值 ∈ {0,1,2}，arr[4]==1（中心已是 who 的子）
+    // 1) 连五检测：任意 5 连窗口全 1
+    for(let s=0;s<=4;s++){
+      let all=true; for(let i=0;i<5;i++){ if(arr[s+i]!==1){all=false;break;} }
+      if(all) return T.FIVE;
+    }
+    // 在所有过中心的 6 格窗口里寻找"四"（_XXXX_ / XXXX 带一空 → 成五）
+    // 用更精确的窗口扫描：检查每个含中心的 5 连窗口里 who 子数 & 两端空位
+    let best=T.NONE;
+
+    // ---- 活四 / 冲四 ----
+    // 活四 OOOO 两端皆空：检查 6 格窗口 0XXXX0
+    for(let s=0;s<=3;s++){ // 6 格窗口起点 s..s+5，需覆盖中心 4
+      if(s+5>8) break;
+      if(s<=4 && s+5>=4){
+        if(arr[s]===0 && arr[s+5]===0){
+          let mid=true; for(let i=1;i<=4;i++){ if(arr[s+i]!==1){mid=false;break;} }
+          if(mid) return T.OPEN_FOUR;
+        }
+      }
+    }
+    // 冲四：存在一个含中心的 5 连窗口，恰好 4 个 who 子 + 1 空（落该空成五）
+    let fourCount=0;
+    for(let s=0;s<=4;s++){
+      if(s>4 || s+4<4) continue; // 必须覆盖中心
+      let ones=0, zeros=0, blocked=false, zeroPos=-1;
+      for(let i=0;i<5;i++){ const v=arr[s+i]; if(v===1)ones++; else if(v===0){zeros++; zeroPos=s+i;} else {blocked=true;break;} }
+      if(blocked) continue;
+      if(ones===4 && zeros===1){ fourCount++; }
+    }
+    if(fourCount>=2) return T.OPEN_FOUR; // 双冲四等效活四（双成五点）
+    if(fourCount===1) best=Math.max(best,T.FOUR);
+
+    // ---- 活三 / 眠三 ----
+    // 活三：能再走一步形成活四的三。判定：存在含中心的 6 格窗口形如 0 1 1 1 0 0 / 0 0 1 1 1 0 等，
+    //   即 3 个 who 子 + 关键空位，且落子后两端仍空（成活四）。
+    // 简化精确法：枚举所有含中心的 6 连窗口，统计 who 子=3 且两端为空的"潜在活四"模式。
+    let openThree=false, sleepThree=false;
+    for(let s=0;s<=3;s++){ // 6 格窗口
+      if(s+5>8) break;
+      if(!(s<=4 && s+5>=4)) continue;
+      const w=[arr[s],arr[s+1],arr[s+2],arr[s+3],arr[s+4],arr[s+5]];
+      if(w.indexOf(2)>=0) continue;
+      let ones=0; for(const v of w) if(v===1) ones++;
+      if(ones!==3) continue;
+      // 两端必须为空（0 _ _ _ _ 0 框架）才可能是活三
+      if(w[0]===0 && w[5]===0){
+        // 中间 4 格里有 3 子 1 空 → 落那个空成 0XXXX0 活四
+        openThree=true;
+      }
+    }
+    if(openThree) best=Math.max(best,T.OPEN_THREE);
+    else {
+      // 眠三：存在含中心的 5 连窗口，3 个 who 子 + 2 空（落一空成冲四/四）
+      for(let s=0;s<=4;s++){
+        if(s>4 || s+4<4) continue;
+        let ones=0,zeros=0,blocked=false;
+        for(let i=0;i<5;i++){ const v=arr[s+i]; if(v===1)ones++; else if(v===0)zeros++; else{blocked=true;break;} }
+        if(blocked) continue;
+        if(ones===3 && zeros===2){ sleepThree=true; }
+      }
+      if(sleepThree) best=Math.max(best,T.SLEEP_THREE);
+    }
+
+    // ---- 活二 / 眠二 ----
+    if(best<T.SLEEP_THREE){
+      let openTwo=false, sleepTwo=false;
+      // 活二：含中心的 6 格窗口，2 个 who 子，两端空，可发展成活三
+      for(let s=0;s<=3;s++){
+        if(s+5>8) break;
+        if(!(s<=4 && s+5>=4)) continue;
+        const w=[arr[s],arr[s+1],arr[s+2],arr[s+3],arr[s+4],arr[s+5]];
+        if(w.indexOf(2)>=0) continue;
+        let ones=0; for(const v of w) if(v===1) ones++;
+        if(ones===2 && w[0]===0 && w[5]===0) openTwo=true;
+      }
+      if(openTwo) best=Math.max(best,T.OPEN_TWO);
+      else {
+        for(let s=0;s<=4;s++){
+          if(s>4 || s+4<4) continue;
+          let ones=0,zeros=0,blocked=false;
+          for(let i=0;i<5;i++){ const v=arr[s+i]; if(v===1)ones++; else if(v===0)zeros++; else{blocked=true;break;} }
+          if(blocked) continue;
+          if(ones===2 && zeros===3) sleepTwo=true;
+        }
+        if(sleepTwo) best=Math.max(best,T.SLEEP_TWO);
+      }
+    }
+    if(best===T.NONE){
+      // 至少自身一子，有空间发展即记 ONE
+      for(let s=0;s<=4;s++){
+        if(s>4 || s+4<4) continue;
+        let ones=0,blocked=false;
+        for(let i=0;i<5;i++){ const v=arr[s+i]; if(v===2){blocked=true;break;} if(v===1)ones++; }
+        if(!blocked && ones>=1){ best=T.ONE; break; }
+      }
+    }
+    return best;
+  }
+
+  // 假设 who 落子在 (x,y)，返回四个方向的棋型枚举数组
+  function shapesAt(board,x,y,who){
+    const out=[0,0,0,0];
+    for(let d=0;d<4;d++){
+      const [dx,dy]=DIRS[d];
+      const arr=lineCells(board,x,y,dx,dy,who,true);
+      out[d]=shapeOnLine(arr);
+    }
+    return out;
+  }
+
+  // 单方向棋型加权得分（用于落子价值评估）
+  function patternScore(board,x,y,who){
+    const sh=shapesAt(board,x,y,who);
+    if(sh.indexOf(T.FIVE)>=0) return S.FIVE;
+    let s=0;
+    let cOpenFour=0,cFour=0,cOpenThree=0,cSleepThree=0,cOpenTwo=0;
+    for(const t of sh){
+      s+=TVAL[t];
+      if(t===T.OPEN_FOUR)cOpenFour++;
+      else if(t===T.FOUR)cFour++;
+      else if(t===T.OPEN_THREE)cOpenThree++;
+      else if(t===T.SLEEP_THREE)cSleepThree++;
+      else if(t===T.OPEN_TWO)cOpenTwo++;
+    }
+    // 组合奖励：双威胁（无法同时防守）远强于单威胁之和
+    if(cOpenFour>=1) s+=S.OPEN_FOUR;                 // 活四必胜
+    if(cFour>=2) s+=S.OPEN_FOUR;                     // 双冲四 = 活四
+    if(cFour>=1 && cOpenThree>=1) s+=S.OPEN_FOUR*0.9;// 四三杀
+    if(cOpenThree>=2) s+=S.OPEN_FOUR*0.55;           // 双活三 ≈ 准必胜
+    if(cOpenThree>=1 && cSleepThree>=1) s+=S.OPEN_THREE*1.5;
+    if(cOpenThree>=1 && cOpenTwo>=1) s+=S.OPEN_THREE*0.4;
+    return s;
+  }
+
+  // 威胁摘要（基于精确棋型）
+  function threat(board,x,y,who){
+    const sh=shapesAt(board,x,y,who);
+    let five=false,openFour=0,four=0,openThree=0,sleepThree=0;
+    for(const t of sh){
+      if(t===T.FIVE)five=true;
+      else if(t===T.OPEN_FOUR)openFour++;
+      else if(t===T.FOUR)four++;
+      else if(t===T.OPEN_THREE)openThree++;
+      else if(t===T.SLEEP_THREE)sleepThree++;
+    }
+    return { five, openFour, four:four+openFour, openThree, sleepThree,
+             // 任意"四"（含活四与冲四，可成五）
+             anyFour: four+openFour };
+  }
+  // 制胜威胁：落子后形成对手无法用单点完全化解的局面
+  function isWinningThreat(board,x,y,who){
+    const t=threat(board,x,y,who);
+    if(t.five) return true;
+    if(t.openFour>=1) return true;          // 活四
+    if(t.anyFour>=2) return true;           // 双四
+    if(t.anyFour>=1 && t.openThree>=1) return true; // 四三
+    if(t.openThree>=2) return true;         // 双活三
+    return false;
+  }
+  // 是否构成"四级"先手（冲四或活四，强制对手应一手）
+  function makesFour(board,x,y,who){
+    const t=threat(board,x,y,who);
+    return t.five || t.anyFour>=1;
+  }
+  function makesOpenThree(board,x,y,who){
+    const t=threat(board,x,y,who);
+    return t.openThree>=1;
+  }
+
+  // ---------- 胜负判定 ----------
+  function checkWin(board,x,y,who){
+    for(const [dx,dy] of DIRS){
+      let cnt=1, nx=x+dx, ny=y+dy;
+      while(board.get(enc(nx,ny))===who){ cnt++; nx+=dx; ny+=dy; }
+      nx=x-dx; ny=y-dy;
+      while(board.get(enc(nx,ny))===who){ cnt++; nx-=dx; ny-=dy; }
+      if(cnt>=5){
+        const line=[[x,y]]; nx=x+dx; ny=y+dy;
+        while(board.get(enc(nx,ny))===who){ line.push([nx,ny]); nx+=dx; ny+=dy; }
+        nx=x-dx; ny=y-dy;
+        while(board.get(enc(nx,ny))===who){ line.unshift([nx,ny]); nx-=dx; ny-=dy; }
+        return line;
+      }
+    }
+    return null;
+  }
+  // 兼容旧接口：某点附近能否成"四窗口"（≥4 子 1 空的 5 连）
+  function fourWindows(board,x,y,who){
+    const t=threat(board,x,y,who);
+    return t.anyFour;
+  }
+
+  // ---------- 整盘静态评估（增量）----------
+  // 单子站立棋型（以段去重，含跳型），供整盘评估
+  function standing(board,who,x,y){
+    let s=0;
+    for(let d=0;d<4;d++){
+      const [dx,dy]=DIRS[d];
+      // 仅在段起点统计（前一格非 who），避免重复
+      if(cellState(board,x-dx,y-dy,who)===1) continue;
+      const arr=lineCells(board,x,y,dx,dy,who,false); // arr[4] 为真实状态(==1)
+      // 以该方向识别这条线上、从中心向正方向延展的棋型
+      const t=shapeOnLineDirectional(arr);
+      s+=TVAL[t];
+    }
+    return s;
+  }
+  // 方向性识别：中心点是段首，向 +k 方向看其棋型（用于整盘 standing 去重）
+  function shapeOnLineDirectional(arr){
+    // 复用 shapeOnLine（它本身是对称窗口扫描，足够准确表征该子参与的最强棋型）
+    // 但 standing 已通过"段首去重"避免重复计入，所以这里直接给该子的最强方向型
+    return shapeOnLine(arr);
+  }
+  function sgn(who){ return who===ME?1:-OPPW; }
+
+  function evaluateFull(board){
+    let s=0;
+    for(const [key,who] of board){
+      const x=decx(key), y=decy(key);
+      s += sgn(who)*standing(board,who,x,y);
+    }
+    return s;
+  }
+  function neighborStones(board,x,y){
+    const out=[], seen=new Set();
+    for(const [dx,dy] of DIRS){
+      for(let i=-5;i<=5;i++){ if(i===0) continue;
+        const nx=x+dx*i, ny=y+dy*i, e=enc(nx,ny);
+        if(board.has(e) && !seen.has(e)){ seen.add(e); out.push([nx,ny]); }
+      }
+    }
+    return out;
+  }
+  function applyMove(board,x,y,who){
+    const N=neighborStones(board,x,y);
+    let before=0;
+    for(const [sx,sy] of N){ const w=board.get(enc(sx,sy)); before+=sgn(w)*standing(board,w,sx,sy); }
+    board.set(enc(x,y),who);
+    let after=sgn(who)*standing(board,who,x,y);
+    for(const [sx,sy] of N){ const w=board.get(enc(sx,sy)); after+=sgn(w)*standing(board,w,sx,sy); }
+    EVAL += after-before;
+  }
+  function undoMove(board,x,y,who){
+    let after=sgn(who)*standing(board,who,x,y);
+    const N=neighborStones(board,x,y);
+    for(const [sx,sy] of N){ const w=board.get(enc(sx,sy)); after+=sgn(w)*standing(board,w,sx,sy); }
+    board.delete(enc(x,y));
+    let before=0;
+    for(const [sx,sy] of N){ const w=board.get(enc(sx,sy)); before+=sgn(w)*standing(board,w,sx,sy); }
+    EVAL -= after-before;
+  }
+
+  // ---------- 候选生成 ----------
+  function candidates(board, radius){
+    radius=radius||2;
+    if(board.size===0) return [[0,0]];
+    const seen=new Set(), out=[];
+    for(const key of board.keys()){
+      const sx=decx(key), sy=decy(key);
+      for(let dx=-radius;dx<=radius;dx++) for(let dy=-radius;dy<=radius;dy++){
+        const nx=sx+dx, ny=sy+dy, e=enc(nx,ny);
+        if(!board.has(e) && !seen.has(e)){ seen.add(e); out.push([nx,ny]); }
+      }
+    }
+    return out;
+  }
+
+  // ---------- 着法生成与排序（含杀手 / 历史 / 提示）----------
+  function genMoves(board, cur, oth, width, hint, ply){
+    const hk = hint ? new Set(hint.map(([x,y])=>enc(x,y))) : null;
+    const km = (ply!=null && KILL[ply]) ? KILL[ply] : null;
+    const k0 = km?km[0]:-1, k1 = km?km[1]:-1;
+    const cs=candidates(board);
+    const scored=cs.map(([x,y])=>{
+      const e=enc(x,y);
+      // 进攻分 + 0.85*防守分（堵对手的价值）
+      let s=patternScore(board,x,y,cur)+0.85*patternScore(board,x,y,oth);
+      if(hk && hk.has(e)) s+=8;
+      const h=HIST.get(e); if(h) s+=h;
+      if(e===k0) s+=1200; else if(e===k1) s+=800;
+      return {x,y,e,s};
+    });
+    scored.sort((a,b)=>b.s-a.s);
+    return scored.slice(0, Math.max(1,width));
+  }
+
+  // ---------- VCF：连续冲四算杀 ----------
+  function winningEmptyPoints(board, who){
+    const cs=candidates(board,1), out=[];
+    for(const [x,y] of cs){ board.set(enc(x,y),who); if(checkWin(board,x,y,who)) out.push([x,y]); board.delete(enc(x,y)); }
+    return out;
+  }
+  function vcf(board, me, opp, depth, deadline){
+    if(performance.now()>deadline || depth<=0) return null;
+    const cs=candidates(board,2); const fours=[];
+    for(const [x,y] of cs){
+      const t=threat(board,x,y,me);
+      if(t.five){ return [x,y]; }            // 直接成五
+      if(t.anyFour>=1) fours.push([x,y, patternScore(board,x,y,me)]);
+    }
+    fours.sort((a,b)=>b[2]-a[2]);
+    for(const [x,y] of fours){
+      board.set(enc(x,y),me);
+      if(checkWin(board,x,y,me)){ board.delete(enc(x,y)); return [x,y]; }
+      const t=threat(board,x,y,me);
+      // 形成活四或双四 → 必胜
+      if(t.openFour>=1 || t.anyFour>=2){ board.delete(enc(x,y)); return [x,y]; }
+      // 冲四：对手只能堵唯一成五点
+      const defs=winningEmptyPoints(board, me);
+      if(defs.length===1){
+        const [bx,by]=defs[0]; board.set(enc(bx,by),opp);
+        const cont=vcf(board, me, opp, depth-1, deadline); board.delete(enc(bx,by));
+        if(cont){ board.delete(enc(x,y)); return [x,y]; }
+      }
+      board.delete(enc(x,y));
+    }
+    return null;
+  }
+
+  // ---------- VCT：连续威胁（活三/冲四）算杀 ----------
+  // 找出 who 落子后能化解威胁的防点（针对 me 的进攻，返回 opp 的应手集合）
+  function defensePoints(board, attacker, defender){
+    const cs=candidates(board,2), out=[], seen=new Set();
+    // 1) 若 attacker 有成五点，defender 必须堵这些点
+    const wins=[];
+    for(const [x,y] of cs){ board.set(enc(x,y),attacker); if(checkWin(board,x,y,attacker)) wins.push([x,y]); board.delete(enc(x,y)); }
+    if(wins.length){
+      for(const [x,y] of wins){ const e=enc(x,y); if(!seen.has(e)){seen.add(e); out.push([x,y]);} }
+      // 也可由 defender 自己成五反杀（更优先），加入候选
+      for(const [x,y] of cs){ board.set(enc(x,y),defender); const w=checkWin(board,x,y,defender); board.delete(enc(x,y)); if(w){ const e=enc(x,y); if(!seen.has(e)){seen.add(e); out.push([x,y]);} } }
+      return out.slice(0,8);
+    }
+    // 2) 否则针对活三/冲四：候选是能消除威胁或反先手的点
+    //    收集 attacker 的关键威胁点，defender 在其邻域阻挡，或自行制造更高威胁
+    for(const [x,y] of cs){
+      // defender 自己能制造四级先手（夺回主动）
+      if(makesFour(board,x,y,defender)){ const e=enc(x,y); if(!seen.has(e)){seen.add(e); out.push([x,y]);} }
+    }
+    // attacker 威胁点本身（堵点）
+    for(const [x,y] of cs){
+      if(isWinningThreat(board,x,y,attacker) || makesFour(board,x,y,attacker) || makesOpenThree(board,x,y,attacker)){
+        const e=enc(x,y); if(!seen.has(e)){seen.add(e); out.push([x,y]);}
+      }
+    }
+    return out.slice(0,12);
+  }
+
+  // VCT 主搜索：me 只走"威胁着法"（冲四 / 活三 / 成五），opp 必须防守
+  function vctSearch(board, me, opp, depth, deadline){
+    if(performance.now()>deadline || depth<=0) return null;
+    const cs=candidates(board,2);
+    const atk=[];
+    for(const [x,y] of cs){
+      const t=threat(board,x,y,me);
+      if(t.five){ return [x,y]; }
+      // 仅保留有威胁的进攻着法
+      if(t.anyFour>=1 || t.openThree>=1){
+        atk.push({x,y,s:patternScore(board,x,y,me), t});
+      }
+    }
+    atk.sort((a,b)=>b.s-a.s);
+    for(const {x,y,t} of atk.slice(0,14)){
+      board.set(enc(x,y),me);
+      if(checkWin(board,x,y,me)){ board.delete(enc(x,y)); return [x,y]; }
+      // 落子即形成制胜威胁（活四/双四/四三/双活三）→ 杀
+      if(isWinningThreat(board,x,y,me)){ board.delete(enc(x,y)); return [x,y]; }
+      // 否则递归：对手防守，看是否所有防点都被破
+      const defs=defensePoints(board, me, opp);
+      if(defs.length===0){ board.delete(enc(x,y)); return [x,y]; } // 无法防守
+      let allLose=true;
+      for(const [dx2,dy2] of defs){
+        board.set(enc(dx2,dy2),opp);
+        // 对手若直接成五反杀，则此防点成立，me 杀失败
+        let oppWin=false;
+        const ocs=candidates(board,1);
+        for(const [ox,oy] of ocs){ board.set(enc(ox,oy),opp); if(checkWin(board,ox,oy,opp)){oppWin=true; board.delete(enc(ox,oy)); break;} board.delete(enc(ox,oy)); }
+        let cont=null;
+        if(!oppWin) cont=vctSearch(board, me, opp, depth-1, deadline);
+        board.delete(enc(dx2,dy2));
+        if(!cont){ allLose=false; break; }
+      }
+      board.delete(enc(x,y));
+      if(allLose) return [x,y];
+      if(performance.now()>deadline) return null;
+    }
+    return null;
+  }
+
+  // ---------- negamax + alpha-beta + 置换表 + 增量评估 ----------
+  let TT=new Map(), HASH=0, ZOB=new Map();
+  let HIST=new Map();
+  let KILL=[];
+  let VN=0;
+  function zob(x,y,who){ const key=enc(x,y)*2+(who===ME?0:1); let v=ZOB.get(key); if(v===undefined){ v=(Math.floor(Math.random()*0x7fffffff))^0; ZOB.set(key,v); } return v; }
+
+  // 在某局面下，找出"必须回应"的紧急着法集合（成五 / 防五 / 防活四）。
+  // 若返回非空，则该层只搜索这些着法（强制延伸，避免水平线效应）。
+  function forcedMoves(board, cur, oth){
+    const cs=candidates(board,1);
+    // 自己能成五
+    for(const [x,y] of cs){ board.set(enc(x,y),cur); if(checkWin(board,x,y,cur)){ board.delete(enc(x,y)); return [[x,y]]; } board.delete(enc(x,y)); }
+    // 对手能成五 → 必须全堵
+    const block=[];
+    for(const [x,y] of cs){ board.set(enc(x,y),oth); if(checkWin(board,x,y,oth)){ block.push([x,y]); } board.delete(enc(x,y)); }
+    if(block.length) return block;
+    return null;
+  }
+
+  function ab(board, depth, alpha, beta, color, deadline, ply){
+    if(((VN++)&1023)===0 && performance.now()>deadline) throw 'to';
+    if(depth===0) return color*EVAL;
+    const tte=TT.get(HASH);
+    if(tte && tte.depth>=depth){ if(tte.flag===0) return tte.v; if(tte.flag<0 && tte.v<=alpha) return tte.v; if(tte.flag>0 && tte.v>=beta) return tte.v; }
+    const cur=color===1?ME:OPP, oth=color===1?OPP:ME;
+
+    // 强制延伸：存在成五/防五着法时，只搜这些（不消耗常规深度上限太多）
+    const forced=forcedMoves(board, cur, oth);
+    let moves;
+    if(forced){
+      moves=forced.map(([x,y])=>({x,y,e:enc(x,y),s:0}));
+    } else {
+      moves=genMoves(board, cur, oth, depth>=4?WIDTH:Math.min(WIDTH,10), null, ply);
+    }
+    if(moves.length===0) return color*EVAL;
+    if(tte && tte.mv!=null){ const i=moves.findIndex(m=>m.e===tte.mv); if(i>0){ const mm=moves[i]; moves.splice(i,1); moves.unshift(mm); } }
+
+    let best=-Infinity, a0=alpha, bestE=-1, first=true;
+    for(const m of moves){
+      applyMove(board,m.x,m.y,cur); HASH^=zob(m.x,m.y,cur);
+      let val;
+      try{
+        if(checkWin(board,m.x,m.y,cur)) val=S.FIVE-(MAXD-depth);
+        else if(first) val=-ab(board, depth-1, -beta, -alpha, -color, deadline, ply+1);
+        else { val=-ab(board, depth-1, -alpha-1, -alpha, -color, deadline, ply+1);
+               if(val>alpha && val<beta) val=-ab(board, depth-1, -beta, -alpha, -color, deadline, ply+1); }
+      } finally {
+        // 即便子搜索因超时抛出，也必须撤销本手，保证棋盘/哈希/评估一致
+        HASH^=zob(m.x,m.y,cur); undoMove(board,m.x,m.y,cur);
+      }
+      if(val>best){ best=val; bestE=m.e; }
+      if(best>alpha) alpha=best;
+      if(alpha>=beta){
+        const kk=KILL[ply]||(KILL[ply]=[-1,-1]); if(kk[0]!==m.e){ kk[1]=kk[0]; kk[0]=m.e; }
+        HIST.set(m.e,(HIST.get(m.e)||0)+depth*depth);
+        break;
+      }
+      first=false;
+    }
+    const flag = best<=a0?-1 : best>=beta?1 : 0;
+    TT.set(HASH, {depth, v:best, flag, mv:bestE});
+    return best;
+  }
+
+  function search(board, me, opp, cfg){
+    ME=me; OPP=opp; OPPW=cfg.oppw; WIDTH=cfg.width; MAXD=cfg.maxDepth;
+    EVAL=evaluateFull(board); TT=new Map(); HASH=0; HIST=new Map(); KILL=[]; VN=0;
+    const deadline=performance.now()+cfg.timeMs;
+    let cs=genMoves(board, me, opp, cfg.width, cfg.hint, 0);
+    if(cs.length===1) return {move:[cs[0].x,cs[0].y], depth:0};
+    let result=cs[0], reach=1;
+    for(let d=2; d<=cfg.maxDepth; d++){
+      try{
+        let alpha=-Infinity, localBest=-Infinity, localMove=result, first=true;
+        const order=[result].concat(cs.filter(m=>!(m.x===result.x&&m.y===result.y)));
+        for(const m of order){
+          applyMove(board,m.x,m.y,me); HASH^=zob(m.x,m.y,me);
+          let val;
+          try{
+            if(checkWin(board,m.x,m.y,me)) val=S.FIVE;
+            else if(first) val=-ab(board, d-1, -Infinity, -alpha, -1, deadline, 1);
+            else { val=-ab(board, d-1, -alpha-1, -alpha, -1, deadline, 1);
+                   if(val>alpha) val=-ab(board, d-1, -Infinity, -alpha, -1, deadline, 1); }
+          } finally {
+            HASH^=zob(m.x,m.y,me); undoMove(board,m.x,m.y,me);
+          }
+          if(val>localBest){ localBest=val; localMove=m; }
+          if(localBest>alpha) alpha=localBest;
+          first=false;
+        }
+        result=localMove; reach=d;
+        if(localBest>=S.FIVE-50) break;
+      }catch(e){ break; }
+    }
+    return {move:[result.x,result.y], depth:reach};
+  }
+
+  // ---------- 顶层决策 ----------
+  function bestMove(board, me, opp, cfg){
+    cfg=Object.assign({ width:14, maxDepth:10, timeMs:900, oppw:1.55, vcfDepth:16, vcfMs:300, transcend:false, vctDepth:10, vctMs:420 }, cfg||{});
+    if(board.size===0) return { move:[0,0], tag:'open' };
+    const cs=candidates(board,2);
+
+    // 1) 自己一手成五
+    for(const [x,y] of cs){ board.set(enc(x,y),me); const w=checkWin(board,x,y,me); board.delete(enc(x,y)); if(w) return {move:[x,y],tag:'win'}; }
+    // 2) 对手一手成五 → 必堵（若有多个，选能同时制造己方威胁的）
+    {
+      const block=[];
+      for(const [x,y] of cs){ board.set(enc(x,y),opp); const w=checkWin(board,x,y,opp); board.delete(enc(x,y)); if(w) block.push([x,y]); }
+      if(block.length===1) return {move:block[0],tag:'block5'};
+      if(block.length>1){
+        // 多个成五点无法全堵 → 找能己方成五/活四的反杀，否则随便堵一个
+        let bp=block[0],bs=-1;
+        for(const [x,y] of block){ const s=patternScore(board,x,y,me); if(s>bs){bs=s;bp=[x,y];} }
+        return {move:bp,tag:'block5'};
+      }
+    }
+    // 3) 自己能形成制胜威胁（活四/双四/四三/双活三）→ 直接进攻
+    { let bp=null,bs=-1; for(const [x,y] of cs){ if(isWinningThreat(board,x,y,me)){ const s=patternScore(board,x,y,me); if(s>bs){bs=s;bp=[x,y];} } } if(bp) return {move:bp,tag:'attack'}; }
+
+    // 4) VCF 连续冲四算杀
+    const kill=vcf(board, me, opp, cfg.vcfDepth, performance.now()+cfg.vcfMs); if(kill) return {move:kill, tag:'vcf'};
+
+    // 5) 超越模式：VCT 连续威胁算杀（活三连杀）
+    if(cfg.transcend){ const vct=vctSearch(board, me, opp, cfg.vctDepth, performance.now()+cfg.vctMs); if(vct) return {move:vct, tag:'vct'}; }
+
+    // 6) 防守对手的制胜威胁（验证彻底解围）
+    {
+      const wt=[]; for(const [x,y] of cs){ if(isWinningThreat(board,x,y,opp)) wt.push([x,y]); }
+      if(wt.length){
+        wt.sort((a,b)=>patternScore(board,b[0],b[1],opp)-patternScore(board,a[0],a[1],opp));
+        // 优先：能彻底消除所有对手制胜威胁的点
+        for(const [bx,by] of wt){
+          board.set(enc(bx,by),me);
+          let remain=false;
+          for(const [x,y] of cs){ if((x!==bx||y!==by) && isWinningThreat(board,x,y,opp)){ remain=true; break; } }
+          board.delete(enc(bx,by));
+          if(!remain) return {move:[bx,by],tag:'defend'};
+        }
+        // 没有单点能全解 → 尝试用己方四级先手抢攻（让对手先防）
+        let fp=null,fs=-1;
+        for(const [x,y] of cs){ if(makesFour(board,x,y,me)){ const s=patternScore(board,x,y,me); if(s>fs){fs=s;fp=[x,y];} } }
+        if(fp) return {move:fp,tag:'counter'};
+        return {move:wt[0],tag:'defend'};
+      }
+    }
+
+    // 7) 破解对手 VCF（占据其连续冲四的首着）
+    { const ok=vcf(board, opp, me, cfg.vcfDepth, performance.now()+cfg.vcfMs); if(ok) return {move:ok, tag:'vcfDef'}; }
+
+    // 8) 防守对手 VCT（超越模式才算，拦截对手活三连杀）—— 关键增强
+    if(cfg.transcend){
+      const oppVct=vctSearch(board, opp, me, Math.min(cfg.vctDepth,8), performance.now()+cfg.vctMs);
+      if(oppVct){
+        // 对手存在 VCT 杀着 oppVct。尝试：堵住该首着，或制造更快的己方先手
+        // 8a) 己方四级先手抢先
+        let fp=null,fs=-1;
+        for(const [x,y] of cs){ if(makesFour(board,x,y,me)){ const s=patternScore(board,x,y,me); if(s>fs){fs=s;fp=[x,y];} } }
+        if(fp) return {move:fp,tag:'counter'};
+        // 8b) 直接占据对手的杀着首点
+        const [ox,oy]=oppVct;
+        if(!board.has(enc(ox,oy))) return {move:[ox,oy],tag:'vctDef'};
+      }
+    }
+
+    // 9) 常规深度搜索（带活三/冲四提示）
+    const hint=[];
+    for(const [x,y] of cs){
+      const sm=patternScore(board,x,y,me), so=patternScore(board,x,y,opp);
+      if(sm>=S.OPEN_THREE || so>=S.OPEN_THREE) hint.push([x,y]);
+    }
+    cfg.hint=hint;
+    const r=search(board, me, opp, cfg);
+    return {move:r.move, tag:'search', depth:r.depth};
+  }
+
+  return {
+    k:enc, enc, STR, OFF, checkWin, fourWindows, patternScore, standing, evaluateFull,
+    candidates, vcf, vctSearch, bestMove, isWinningThreat, threat, shapesAt, S, T,
+    _setView:(m,o)=>{ME=m;OPP=o;}, _evalFull:evaluateFull, _apply:applyMove, _undo:undoMove,
+    _getEval:()=>EVAL, _setEval:(v)=>{EVAL=v;}
+  };
+}
+/* ============================================================
+   GomokuNet —— 迷你神经网络（位置价值头）
+   - 输入：以候选点为中心的局部棋型特征（24 维）
+   - 结构：24 → H(16) tanh → 1（tanh 输出，值域 [-1,1]）
+   - 用途：为搜索提供"价值提示"（候选排序 + 软加成），不覆盖硬战术
+   - GPU：片元着色器并行评估所有候选（见 page 的 nnGpuScore）
+   - 自学习：对局结束后按胜负做在线反向传播（败局重点学习玩家下法）
+   - 持久化：window.storage（artifact 持久存储）/ 内存兜底
+   依赖注入：传入 engine（需 enc/decx/decy/shapesAt/T/threat/candidates）
+   ============================================================ */
+function makeGomokuNet(E, opts) {
+  opts = opts || {};
+  const IN = 24, H = 16;            // 输入维 / 隐藏单元
+  const enc = E.enc, T = E.T;
+  const STR = E.STR, OFF = E.OFF;
+  const decx = e => Math.floor(e / STR) - OFF;
+  const decy = e => e % STR - OFF;
+  const DIRS = [[1,0],[0,1],[1,1],[1,-1]];
+
+  // —— 参数（Float32Array，便于 GPU 上传与快速反传）——
+  // W1: H x IN, b1: H, W2: H, b2: 1
+  const P = {
+    W1: new Float32Array(H * IN),
+    b1: new Float32Array(H),
+    W2: new Float32Array(H),
+    b2: new Float32Array(1),
+    version: 0, games: 0, wins: 0, losses: 0,
+  };
+
+  function seed() {
+    // Xavier/Glorot 均匀初始化（确定性种子，保证可复现）
+    let s = 0x2545F491;
+    const rnd = () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+    const r1 = Math.sqrt(6 / (IN + H)), r2 = Math.sqrt(6 / (H + 1));
+    for (let i = 0; i < P.W1.length; i++) P.W1[i] = (rnd() * 2 - 1) * r1;
+    for (let i = 0; i < P.b1.length; i++) P.b1[i] = 0;
+    for (let i = 0; i < P.W2.length; i++) P.W2[i] = (rnd() * 2 - 1) * r2;
+    P.b2[0] = 0;
+    P.version = 1;
+  }
+
+  // ---------------- 特征提取 ----------------
+  // 以 (x,y) 为中心，假设 who 落子，提取 24 维特征：
+  //   每个方向(4) × [自身线势, 对手线势] = 8
+  //   每个方向(4) × [自身是否成四/活三, 对手是否成四/活三] 压缩为 8
+  //   全局 8：中心距、手数比、己方威胁计数、对手威胁计数、活三(me)、活三(opp)、四(me)、四(opp)
+  const TSCALE = [0, 0.10, 0.18, 0.30, 0.55, 0.78, 0.90, 0.98, 1.0]; // 按棋型枚举归一
+  function features(board, x, y, me, opp, moveCount) {
+    const f = new Float32Array(IN);
+    // 方向棋型（己方/对手）：临时落子读取该点棋型
+    const had = board.has(enc(x, y));
+    if (!had) {
+      // me 落子的方向型
+      board.set(enc(x, y), me);
+      const shMe = E.shapesAt(board, x, y, me);
+      board.delete(enc(x, y));
+      // opp 落子的方向型
+      board.set(enc(x, y), opp);
+      const shOpp = E.shapesAt(board, x, y, opp);
+      board.delete(enc(x, y));
+      for (let d = 0; d < 4; d++) {
+        f[d] = TSCALE[shMe[d]] || 0;          // 0..3 自身方向势
+        f[4 + d] = TSCALE[shOpp[d]] || 0;     // 4..7 对手方向势
+      }
+      // 威胁摘要
+      board.set(enc(x, y), me);
+      const tMe = E.threat(board, x, y, me);
+      board.delete(enc(x, y));
+      board.set(enc(x, y), opp);
+      const tOpp = E.threat(board, x, y, opp);
+      board.delete(enc(x, y));
+      f[8]  = Math.min(1, tMe.anyFour);
+      f[9]  = Math.min(1, tMe.openThree);
+      f[10] = Math.min(1, tMe.openFour);
+      f[11] = Math.min(1, tOpp.anyFour);
+      f[12] = Math.min(1, tOpp.openThree);
+      f[13] = Math.min(1, tOpp.openFour);
+      f[14] = (tMe.anyFour >= 1 && tMe.openThree >= 1) ? 1 : 0; // 己方四三
+      f[15] = (tOpp.anyFour >= 1 && tOpp.openThree >= 1) ? 1 : 0; // 对手四三
+    }
+    // 局部邻域密度（半径2内己方/对手子数）
+    let dMe = 0, dOpp = 0;
+    for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) {
+      if (!dx && !dy) continue;
+      const v = board.get(enc(x + dx, y + dy));
+      if (v === me) dMe++; else if (v === opp) dOpp++;
+    }
+    f[16] = Math.min(1, dMe / 6);
+    f[17] = Math.min(1, dOpp / 6);
+    // 与已落子重心的距离（越近越中心）
+    let cx = 0, cy = 0, n = 0;
+    for (const k of board.keys()) { cx += decx(k); cy += decy(k); n++; }
+    if (n > 0) { cx /= n; cy /= n; }
+    const dist = Math.hypot(x - cx, y - cy);
+    f[18] = Math.exp(-dist / 6);                 // 中心性
+    f[19] = Math.min(1, moveCount / 40);         // 进程
+    f[20] = (moveCount % 2 === 0) ? 1 : 0;       // 奇偶（先后手语义）
+    f[21] = Math.min(1, n / 30);                 // 局面复杂度
+    // 是否贴着最近一手（连续性）
+    f[22] = (dMe > 0) ? 1 : 0;
+    f[23] = (dOpp > 0) ? 1 : 0;
+    return f;
+  }
+
+  // ---------------- 前向（CPU）----------------
+  // 返回 { v, h, z1 }，h 为隐藏激活（反传用）
+  function forwardRaw(f) {
+    const z1 = new Float32Array(H), h = new Float32Array(H);
+    for (let j = 0; j < H; j++) {
+      let s = P.b1[j];
+      const base = j * IN;
+      for (let i = 0; i < IN; i++) s += P.W1[base + i] * f[i];
+      z1[j] = s;
+      h[j] = Math.tanh(s);
+    }
+    let o = P.b2[0];
+    for (let j = 0; j < H; j++) o += P.W2[j] * h[j];
+    const v = Math.tanh(o);
+    return { v, h, z1, o };
+  }
+  function value(board, x, y, me, opp, moveCount) {
+    return forwardRaw(features(board, x, y, me, opp, moveCount)).v;
+  }
+
+  // ---------------- 在线反向传播（CPU）----------------
+  // samples: [{f, target}]，target ∈ [-1,1]。均方误差，tanh 输出。
+  function trainBatch(samples, lr, l2) {
+    lr = lr || 0.02; l2 = l2 || 1e-4;
+    let loss = 0;
+    // 梯度累加
+    const gW1 = new Float32Array(H * IN), gb1 = new Float32Array(H);
+    const gW2 = new Float32Array(H), gb2 = new Float32Array(1);
+    for (const s of samples) {
+      const { h, z1, o } = forwardRaw(s.f);
+      const v = Math.tanh(o);
+      const err = v - s.target;            // dL/dv (MSE)
+      loss += err * err;
+      const dO = err * (1 - v * v);        // through output tanh
+      // 输出层梯度
+      for (let j = 0; j < H; j++) gW2[j] += dO * h[j];
+      gb2[0] += dO;
+      // 隐藏层
+      for (let j = 0; j < H; j++) {
+        const dh = dO * P.W2[j] * (1 - h[j] * h[j]); // through tanh
+        const base = j * IN;
+        for (let i = 0; i < IN; i++) gW1[base + i] += dh * s.f[i];
+        gb1[j] += dh;
+      }
+    }
+    const m = Math.max(1, samples.length);
+    // 参数更新（带 L2）
+    for (let i = 0; i < P.W1.length; i++) P.W1[i] -= lr * (gW1[i] / m + l2 * P.W1[i]);
+    for (let j = 0; j < H; j++) P.b1[j] -= lr * (gb1[j] / m);
+    for (let j = 0; j < H; j++) P.W2[j] -= lr * (gW2[j] / m + l2 * P.W2[j]);
+    P.b2[0] -= lr * (gb2[0] / m);
+    P.version++;
+    return loss / m;
+  }
+
+  // ---------------- 从一局棋构造训练样本 ----------------
+  // history: [{x,y,who}]，winner ∈ {'a','h','draw'}，aiSide/humanSide
+  // 思路（败局重点学习玩家）：
+  //  - 每一手落子点，按"落子方最终是否获胜"打目标值，越接近终局权重越高（TD 折扣）
+  //  - 玩家(human)获胜时，其落子目标 = +1（强化"这步是好棋"），AI 当时局面被标负
+  //  - AI 获胜时同理对称
+  function buildSamples(history, winner, aiSide, humanSide) {
+    if (winner === 'draw') return [];
+    const samples = [];
+    const board = new Map();
+    const gamma = 0.92;
+    const Wp = winner; // 胜方
+    for (let t = 0; t < history.length; t++) {
+      const mv = history[t];
+      const me = mv.who;
+      const opp = me === aiSide ? humanSide : aiSide;
+      // 该手落子前的局面下，"该落子点对落子方的价值"
+      const f = features(board, mv.x, mv.y, me, opp, t);
+      // 距终局步数（越近越确定）
+      const stepsToEnd = history.length - 1 - t;
+      const conf = Math.pow(gamma, stepsToEnd);
+      // 落子方是否最终获胜 → 目标符号
+      const win = (me === Wp);
+      const target = (win ? 1 : -1) * conf;
+      samples.push({ f, target });
+
+      // 反例：在同一局面，若改由"对方视角"看这个被对手占据的好点，对对方是威胁（负价值）
+      // —— 这条让网络学到"对手的强点要重视"（败局中尤为关键）
+      if (winner === humanSide && me === humanSide) {
+        const f2 = features(board, mv.x, mv.y, aiSide, humanSide, t); // AI 视角看玩家落点
+        samples.push({ f: f2, target: -conf }); // 对 AI 是高威胁点
+      }
+      board.set(enc(mv.x, mv.y), me);
+    }
+    return samples;
+  }
+
+  // 完整训练入口：返回本次平均损失与样本数
+  function learnFromGame(history, winner, aiSide, humanSide, epochs) {
+    P.games++;
+    if (winner === aiSide) P.wins++; else if (winner === humanSide) P.losses++;
+    const samples = buildSamples(history, winner, aiSide, humanSide);
+    if (samples.length === 0) return { loss: 0, n: 0 };
+    // 败局学习率更高（更想从失败中改进）
+    const baseLr = (winner === humanSide) ? 0.05 : 0.025;
+    epochs = epochs || (winner === humanSide ? 6 : 3);
+    let loss = 0;
+    for (let e = 0; e < epochs; e++) {
+      // 轻微打乱，避免顺序偏置
+      for (let i = samples.length - 1; i > 0; i--) {
+        const j = (Math.random() * (i + 1)) | 0;
+        const tmp = samples[i]; samples[i] = samples[j]; samples[j] = tmp;
+      }
+      loss = trainBatch(samples, baseLr * Math.pow(0.85, e), 1e-4);
+    }
+    return { loss, n: samples.length };
+  }
+
+  // ---------------- 序列化（持久化）----------------
+  function serialize() {
+    return JSON.stringify({
+      IN, H, version: P.version, games: P.games, wins: P.wins, losses: P.losses,
+      W1: Array.from(P.W1), b1: Array.from(P.b1),
+      W2: Array.from(P.W2), b2: Array.from(P.b2),
+    });
+  }
+  function load(str) {
+    try {
+      const o = typeof str === 'string' ? JSON.parse(str) : str;
+      if (!o || o.IN !== IN || o.H !== H || !o.W1) return false;
+      P.W1.set(o.W1); P.b1.set(o.b1); P.W2.set(o.W2); P.b2.set(o.b2);
+      P.version = o.version || 1; P.games = o.games || 0;
+      P.wins = o.wins || 0; P.losses = o.losses || 0;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  seed();
+  return {
+    P, IN, H, features, value, forwardRaw, trainBatch,
+    buildSamples, learnFromGame, serialize, load, seed,
+    stats: () => ({ games: P.games, wins: P.wins, losses: P.losses, version: P.version }),
+  };
+}
+
+// Node 导出（测试用）；浏览器中作为全局函数
+if (typeof module !== 'undefined' && module.exports) module.exports = { makeGomokuNet };
+
+/* ====== 主线程引擎实例（胜负判定 + 无 Worker 时的降级搜索）====== */
+const Engine = EngineFactory();
+const STR = Engine.STR, OFF = Engine.OFF;
+const decX = e => Math.floor(e/STR)-OFF, decY = e => e%STR-OFF;
+
+/* ====== Worker：把同一份引擎源码注入后台线程（CPU 多线程，不阻塞 UI）======
+   支持两种指令：move（求最佳着法）/ ponder（预演玩家下一手并预算应手缓存） */
+const WORKER_SRC = `
+const EngineFactory = ${EngineFactory.toString()};
+const E = EngineFactory(); const enc=E.enc;
+let ponderMap=new Map(), baseSig='';
+function build(st){ const b=new Map(); for(const [e,w] of st) b.set(e,w); return b; }
+function sig(b){ const a=[]; for(const [e,w] of b) a.push(e+w); a.sort(); return a.join('|'); }
+self.onmessage=function(ev){
+  const d=ev.data;
+  if(d.cmd==='ponder'){
+    const b=build(d.stones); baseSig=sig(b); ponderMap=new Map();
+    const cs=E.candidates(b);
+    const top=cs.map(p=>({x:p[0],y:p[1],s:E.patternScore(b,p[0],p[1],d.human)})).sort((a,b)=>b.s-a.s).slice(0, d.cfg.ponderK||5);
+    const t0=performance.now(), budget=d.cfg.ponderMs||220, cap=(d.cfg.ponderK||5)*budget;
+    for(const m of top){
+      if(performance.now()-t0>cap) break;
+      b.set(enc(m.x,m.y),d.human);
+      const r=E.bestMove(b, d.ai, d.human, Object.assign({},d.cfg,{timeMs:budget}));
+      b.delete(enc(m.x,m.y));
+      ponderMap.set(enc(m.x,m.y), r.move);
+    }
+    self.postMessage({type:'pondered', n:ponderMap.size});
+    return;
+  }
+  if(d.cmd==='move'){
+    const t0=performance.now(); const b=build(d.stones);
+    let move=null, tag, depth, hit=false;
+    if(d.lastHuman){
+      const e=enc(d.lastHuman[0],d.lastHuman[1]); const w=b.get(e);
+      b.delete(e); const s2=sig(b); if(w!==undefined) b.set(e,w);
+      if(s2===baseSig && ponderMap.has(e)){ move=ponderMap.get(e); tag='ponder'; hit=true; }
+    }
+    if(!move){ const r=E.bestMove(b, d.me, d.opp, d.cfg); move=r.move; tag=r.tag; depth=r.depth; }
+    self.postMessage({type:'move', reqId:d.reqId, move, tag, depth, ponderHit:hit, ms:Math.round(performance.now()-t0)});
+    return;
+  }
+};
+`;
+let worker=null, pendingResolve=null;
+try{
+  const blob=new Blob([WORKER_SRC],{type:'text/javascript'});
+  worker=new Worker(URL.createObjectURL(blob));
+  worker.onmessage=(ev)=>{ const d=ev.data; if(d.type==='move' && pendingResolve){ const f=pendingResolve; pendingResolve=null; f(d); } };
+  worker.onerror=()=>{ worker=null; };
+}catch(e){ worker=null; }
+
+/* ====== GPU：WebGL2 并行评分（候选点排序提示 + 算力展示），失败自动降级 CPU ====== */
+const RGN=8, SIDE=RGN*2+1;
+let GL=null, GLP=null, GLloc=null, gpuReady=false;
+function initGPU(){
+  try{
+    const cv=document.createElement('canvas'); cv.width=SIDE; cv.height=SIDE;
+    const gl=cv.getContext('webgl2',{antialias:false,preserveDrawingBuffer:true});
+    if(!gl) return false;
+    const vs=`#version 300 es
+in vec2 p; void main(){ gl_Position=vec4(p,0.0,1.0); }`;
+    const fs=`#version 300 es
+precision highp float;
+uniform vec3 uStones[64]; uniform int uCount; uniform float uSide;
+out vec4 o;
+float at(float dx,float dy){ for(int i=0;i<64;i++){ if(i>=uCount) break; vec3 s=uStones[i]; if(abs(s.x-dx)<0.5&&abs(s.y-dy)<0.5) return s.z; } return 0.0; }
+float dirScore(float dx,float dy,float me){
+  float best=0.0;
+  for(int off=-4; off<=0; off++){
+    float ones=1.0; bool dead=false;
+    for(int i=0;i<5;i++){ int rel=off+i; if(rel==0) continue; float v=at(dx*float(rel),dy*float(rel));
+      if(abs(v-me)<0.5) ones+=1.0; else if(abs(v)>0.5) dead=true; }
+    if(!dead){ float sc= ones>=5.0?100000.0: ones==4.0?8000.0: ones==3.0?800.0: ones==2.0?80.0:5.0; best=max(best,sc); }
+  }
+  return best;
+}
+void main(){
+  float c=floor(uSide/2.0);
+  float dx=floor(gl_FragCoord.x)-c, dy=floor(gl_FragCoord.y)-c;
+  if(abs(at(dx,dy))>0.5){ o=vec4(0.0,0.0,0.0,1.0); return; }
+  float a=0.0,d=0.0;
+  a+=dirScore(1.0,0.0,1.0); d+=dirScore(1.0,0.0,-1.0);
+  a+=dirScore(0.0,1.0,1.0); d+=dirScore(0.0,1.0,-1.0);
+  a+=dirScore(1.0,1.0,1.0); d+=dirScore(1.0,1.0,-1.0);
+  a+=dirScore(1.0,-1.0,1.0); d+=dirScore(1.0,-1.0,-1.0);
+  float v=clamp((a+d)/400000.0,0.0,1.0);
+  o=vec4(v,0.0,0.0,1.0);
+}`;
+    const mk=(t,s)=>{ const sh=gl.createShader(t); gl.shaderSource(sh,s); gl.compileShader(sh); if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(sh)||'shader'; return sh; };
+    const prog=gl.createProgram(); gl.attachShader(prog,mk(gl.VERTEX_SHADER,vs)); gl.attachShader(prog,mk(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(prog);
+    if(!gl.getProgramParameter(prog,gl.LINK_STATUS)) throw gl.getProgramInfoLog(prog)||'link';
+    gl.useProgram(prog);
+    const buf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);
+    const lp=gl.getAttribLocation(prog,'p'); gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp,2,gl.FLOAT,false,0,0);
+    GL=gl; GLP=prog; GLloc={ stones:gl.getUniformLocation(prog,'uStones'), count:gl.getUniformLocation(prog,'uCount'), side:gl.getUniformLocation(prog,'uSide') };
+    gl.viewport(0,0,SIDE,SIDE);
+    return true;
+  }catch(e){ GL=null; return false; }
+}
+try{ gpuReady=initGPU(); }catch(e){ gpuReady=false; }
+
+function gpuScore(board, me){
+  if(!gpuReady||!GL||board.size===0) return null;
+  try{
+    let cx=0,cy=0; if(game.history.length){ const l=game.history[game.history.length-1]; cx=l.x; cy=l.y; }
+    const entries=[...board.entries()];
+    entries.sort((a,b)=>(Math.abs(decX(a[0])-cx)+Math.abs(decY(a[0])-cy))-(Math.abs(decX(b[0])-cx)+Math.abs(decY(b[0])-cy)));
+    const data=new Float32Array(64*3); let n=0;
+    for(const [e,w] of entries){ if(n>=64) break; const dx=decX(e)-cx, dy=decY(e)-cy; if(Math.abs(dx)>RGN+4||Math.abs(dy)>RGN+4) continue; data[n*3]=dx; data[n*3+1]=dy; data[n*3+2]=(w===me?1:-1); n++; }
+    GL.useProgram(GLP); GL.uniform3fv(GLloc.stones,data); GL.uniform1i(GLloc.count,n); GL.uniform1f(GLloc.side,SIDE);
+    GL.drawArrays(GL.TRIANGLES,0,3);
+    const px=new Uint8Array(SIDE*SIDE*4); GL.readPixels(0,0,SIDE,SIDE,GL.RGBA,GL.UNSIGNED_BYTE,px);
+    const cand=[];
+    for(let gy=0;gy<SIDE;gy++)for(let gx=0;gx<SIDE;gx++){ const v=px[(gy*SIDE+gx)*4]; if(v<=0) continue; const wx=cx+(gx-RGN), wy=cy+(gy-RGN); if(board.has(Engine.k(wx,wy))) continue; cand.push({x:wx,y:wy,v}); }
+    cand.sort((a,b)=>b.v-a.v);
+    return { hint:cand.slice(0,12).map(o=>[o.x,o.y]), count:cand.length, gpu:true };
+  }catch(e){ return null; }
+}
+/* computeHint 由神经网络增强层提供（见下方 NN 集成段：精确棋型分 ⊕ GPU 网络价值）。 */
+
+
+/* ====== 游戏状态（玩家执蓝先手，AI 执墨灰后手，默认超越模式）====== */
+const game = {
+  board:new Map(), history:[],
+  human:'h', ai:'a', turn:'h',
+  over:false, winner:null, winLine:null, thinking:false,
+  transcend:true, aiReqId:0, lastGpu:null,
+};
+
+/* ============================================================
+   神经网络增强层（GPU 加速 MLP + 自学习 + 持久化）
+   - GomokuNet：迷你价值网络（见 makeGomokuNet）
+   - nnGpuValues：用 WebGL2 片元着色器并行计算所有候选的网络价值
+   - computeHint（增强版）：精确棋型分 ⊕ 网络价值 → 更强的候选排序/多位置预测
+   - 自学习：对局结束调用 net.learnFromGame；权重持久化到 window.storage
+   ============================================================ */
+
+// —— 实例化网络（注入主线程引擎）——
+const NN = makeGomokuNet(Engine);
+
+// —— 持久化（artifact 持久存储；不可用时退化为内存）——
+const NN_KEY = 'gomoku_net_v1';
+async function nnLoadPersisted() {
+  try {
+    if (typeof window !== 'undefined' && window.storage && window.storage.get) {
+      const r = await window.storage.get(NN_KEY, true); // 共享：跨会话累积
+      if (r && r.value) { NN.load(r.value); return true; }
+    }
+  } catch (e) {}
+  return false;
+}
+let nnSaveTimer = null;
+function nnPersist() {
+  // 去抖，避免频繁写入
+  clearTimeout(nnSaveTimer);
+  nnSaveTimer = setTimeout(async () => {
+    try {
+      if (typeof window !== 'undefined' && window.storage && window.storage.set) {
+        await window.storage.set(NN_KEY, NN.serialize(), true);
+      }
+    } catch (e) {}
+  }, 400);
+}
+
+/* ---------------- GPU：MLP 前向并行评估 ----------------
+   思路：CPU 提取 N 个候选的 24 维特征（快，~0.2ms/点）→ 上传为浮点纹理，
+   片元着色器每个像素算一个候选的 24→16(tanh)→1(tanh)，一次 draw 出全部价值。
+   权重以 uniform 传入（W1:16x24, b1:16, W2:16, b2:1，共 ~417 个浮点）。 */
+const NNGPU = { ok: false, gl: null, prog: null, loc: null, fbo: null, tex: null, featTex: null, W: 0, H: 0 };
+function initNNGPU() {
+  try {
+    const cv = document.createElement('canvas');
+    const gl = cv.getContext('webgl2', { antialias: false });
+    if (!gl) return false;
+    const extCBF = gl.getExtension('EXT_color_buffer_float');
+    if (!extCBF) return false; // 需要可渲染浮点纹理
+    const IN = NN.IN, HID = NN.H;
+    // 顶点：全屏三角
+    const vs = `#version 300 es
+in vec2 p; void main(){ gl_Position=vec4(p,0.0,1.0); }`;
+    // 片元：每个像素 = 一个候选。特征从 featTex 读取（每候选占 IN 个 texel，行优先）。
+    const fs = `#version 300 es
+precision highp float;
+uniform sampler2D uFeat;   // 特征纹理：宽 = IN, 高 = N
+uniform int uN;            // 候选数
+uniform int uIN;           // 输入维 (=${IN})
+uniform float uW1[${HID * IN}];
+uniform float uB1[${HID}];
+uniform float uW2[${HID}];
+uniform float uB2;
+uniform float uTexW;       // 特征纹理宽度（=IN）
+out vec4 o;
+void main(){
+  int idx = int(gl_FragCoord.x);     // 候选索引（x 方向）
+  if(idx >= uN){ o=vec4(0.0); return; }
+  float feat[${IN}];
+  for(int i=0;i<${IN};i++){
+    // featTex 第 idx 行、第 i 列
+    float u = (float(i)+0.5)/uTexW;
+    float vv = (float(idx)+0.5)/float(uN);
+    feat[i] = texture(uFeat, vec2(u, vv)).r;
+  }
+  float h[${HID}];
+  for(int j=0;j<${HID};j++){
+    float s = uB1[j];
+    for(int i=0;i<${IN};i++){ s += uW1[j*${IN}+i] * feat[i]; }
+    h[j] = tanh(s);
+  }
+  float out1 = uB2;
+  for(int j=0;j<${HID};j++){ out1 += uW2[j]*h[j]; }
+  float val = tanh(out1);
+  // 编码到 R 通道（[-1,1] → [0,1]）
+  o = vec4(val*0.5+0.5, 0.0, 0.0, 1.0);
+}`;
+    const mk = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(s) || 'sh'; return s; };
+    const prog = gl.createProgram();
+    gl.attachShader(prog, mk(gl.VERTEX_SHADER, vs));
+    gl.attachShader(prog, mk(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw gl.getProgramInfoLog(prog) || 'link';
+    gl.useProgram(prog);
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const lp = gl.getAttribLocation(prog, 'p');
+    gl.enableVertexAttribArray(lp);
+    gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 0, 0);
+    NNGPU.gl = gl; NNGPU.prog = prog;
+    NNGPU.loc = {
+      feat: gl.getUniformLocation(prog, 'uFeat'),
+      n: gl.getUniformLocation(prog, 'uN'),
+      inn: gl.getUniformLocation(prog, 'uIN'),
+      w1: gl.getUniformLocation(prog, 'uW1'),
+      b1: gl.getUniformLocation(prog, 'uB1'),
+      w2: gl.getUniformLocation(prog, 'uW2'),
+      b2: gl.getUniformLocation(prog, 'uB2'),
+      texw: gl.getUniformLocation(prog, 'uTexW'),
+    };
+    NNGPU.ok = true;
+    return true;
+  } catch (e) { NNGPU.ok = false; return false; }
+}
+let nnGpuReady = false;
+try { nnGpuReady = initNNGPU(); } catch (e) { nnGpuReady = false; }
+
+// 用 GPU 计算一批候选的网络价值；失败返回 null（调用方回退 CPU）
+function nnGpuValues(feats, n) {
+  if (!nnGpuReady || !NNGPU.ok || n === 0) return null;
+  try {
+    const gl = NNGPU.gl, IN = NN.IN;
+    // 输出纹理 N×1（用 N×1 的 framebuffer）
+    const outW = n, outH = 1;
+    if (NNGPU.W !== outW) {
+      if (NNGPU.tex) gl.deleteTexture(NNGPU.tex);
+      if (NNGPU.fbo) gl.deleteFramebuffer(NNGPU.fbo);
+      NNGPU.tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, NNGPU.tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, outW, outH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      NNGPU.fbo = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, NNGPU.fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, NNGPU.tex, 0);
+      NNGPU.W = outW;
+    }
+    // 特征纹理 IN×N（R32F）
+    if (NNGPU.featTex) gl.deleteTexture(NNGPU.featTex);
+    NNGPU.featTex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, NNGPU.featTex);
+    const data = new Float32Array(IN * n);
+    for (let k = 0; k < n; k++) data.set(feats[k], k * IN);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, IN, n, 0, gl.RED, gl.FLOAT, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.useProgram(NNGPU.prog);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, NNGPU.fbo);
+    gl.viewport(0, 0, outW, outH);
+    gl.uniform1i(NNGPU.loc.feat, 0);
+    gl.uniform1i(NNGPU.loc.n, n);
+    gl.uniform1i(NNGPU.loc.inn, IN);
+    gl.uniform1fv(NNGPU.loc.w1, NN.P.W1);
+    gl.uniform1fv(NNGPU.loc.b1, NN.P.b1);
+    gl.uniform1fv(NNGPU.loc.w2, NN.P.W2);
+    gl.uniform1f(NNGPU.loc.b2, NN.P.b2[0]);
+    gl.uniform1f(NNGPU.loc.texw, IN);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    const px = new Uint8Array(outW * outH * 4);
+    gl.readPixels(0, 0, outW, outH, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) out[i] = (px[i * 4] / 255) * 2 - 1; // 解码回 [-1,1]
+    return out;
+  } catch (e) { return null; }
+}
+
+/* ---------------- 增强版 computeHint ----------------
+   融合：精确棋型分（攻+守）+ 网络价值（GPU 并行）。
+   多位置预测：对前 K 个候选都给出网络价值，扩大搜索提示集，
+   让引擎在多条可能线路中择优（而非只看单一最高分点）。 */
+function computeHint(board, me, opp) {
+  const cs = Engine.candidates(board, 2);
+  if (cs.length === 0) return { hint: [], count: 0, gpu: false, nn: false };
+  const mc = game.history.length;
+
+  // 1) 精确棋型分（攻 + 守），作为硬基线
+  const base = cs.map(([x, y]) => {
+    const sMe = Engine.patternScore(board, x, y, me);
+    const sOpp = Engine.patternScore(board, x, y, opp);
+    return { x, y, s: sMe + 0.9 * sOpp, sMe, sOpp };
+  });
+
+  // 2) 网络价值（GPU 优先）。仅对"有意义"的前若干候选算 NN，控制成本。
+  base.sort((a, b) => b.s - a.s);
+  const K = Math.min(base.length, 48);                 // 多位置：评估前 48 个可能点
+  const feats = new Array(K);
+  for (let i = 0; i < K; i++) feats[i] = NN.features(board, base[i].x, base[i].y, me, opp, mc);
+  let vals = nnGpuValues(feats, K);
+  let usedGpu = !!vals;
+  if (!vals) { // CPU 回退
+    vals = new Float32Array(K);
+    for (let i = 0; i < K; i++) vals[i] = NN.forwardRaw(feats[i]).v;
+  }
+
+  // 3) 融合排序：棋型分做主，网络价值做"软调节"（缩放到棋型量纲）。
+  //    归一化棋型分到 [0,1] 再与 NN 价值（[-1,1]→[0,1]）加权。
+  const maxS = Math.max(1, base[0].s);
+  for (let i = 0; i < K; i++) {
+    const normS = base[i].s / maxS;            // 0..1
+    const nnN = (vals[i] + 1) / 2;             // 0..1
+    // 战术分占主导（0.75），网络价值微调（0.25）——保证不破坏硬棋型判断
+    base[i].rank = 0.75 * normS + 0.25 * nnN;
+    base[i].nn = vals[i];
+  }
+  for (let i = K; i < base.length; i++) base[i].rank = 0.75 * (base[i].s / maxS);
+  base.sort((a, b) => b.rank - a.rank);
+
+  // 提示集给引擎：取前 14（多位置可能性），既排序又拓宽搜索焦点
+  const hint = base.slice(0, 14).map(o => [o.x, o.y]);
+  return { hint, count: cs.length, gpu: usedGpu, nn: true, top: base.slice(0, 5) };
+}
+
+/* ---------------- 自学习入口（对局结束调用）---------------- */
+function nnLearnFromGame() {
+  try {
+    const winner = game.winner; // 'a' | 'h'
+    if (!winner) return null;
+    const res = NN.learnFromGame(game.history, winner, game.ai, game.human,
+      winner === game.human ? 6 : 3);
+    nnPersist();
+    return res;
+  } catch (e) { return null; }
+}
+
+
+function currentCfg(){
+  return game.transcend
+    ? { width:16, maxDepth:14, timeMs:500, oppw:1.7,  transcend:true,  vcfDepth:20, vcfMs:300, vctDepth:13, vctMs:380, ponderK:5, ponderMs:220 }
+    : { width:13, maxDepth:10, timeMs:440, oppw:1.65, transcend:false, vcfDepth:16, vcfMs:240, vctDepth:9,  vctMs:260, ponderK:4, ponderMs:170 };
+}
+
+/* ====== 无限画布：相机 + 渲染 ====== */
+const canvas=document.getElementById('board'); const ctx=canvas.getContext('2d');
+let W=0,H=0,DPR=1; const BASE=46;
+const view={ cx:0, cy:0, zoom:1, target:null };
+const placeAnim=new Map(); let hoverCell=null;
+const PX=()=>BASE*view.zoom; const clampZoom=z=>Math.max(0.5,Math.min(2.3,z));
+function resize(){ DPR=Math.min(window.devicePixelRatio||1,2.5); W=window.innerWidth; H=window.innerHeight;
+  canvas.width=Math.round(W*DPR); canvas.height=Math.round(H*DPR); canvas.style.width=W+'px'; canvas.style.height=H+'px'; ctx.setTransform(DPR,0,0,DPR,0,0); }
+window.addEventListener('resize', resize);
+function cellToScreen(i,j){ const px=PX(); return { x:(i-view.cx)*px+W/2, y:(j-view.cy)*px+H/2 }; }
+function screenToCell(sx,sy){ const px=PX(); return { i:Math.round((sx-W/2)/px+view.cx), j:Math.round((sy-H/2)/px+view.cy) }; }
+function panBy(dx,dy){ const px=PX(); view.cx-=dx/px; view.cy-=dy/px; view.target=null; }
+function zoomAt(sx,sy,f){ const px=PX(); const wi=(sx-W/2)/px+view.cx, wj=(sy-H/2)/px+view.cy; view.zoom=clampZoom(view.zoom*f); const np=PX(); view.cx=wi-(sx-W/2)/np; view.cy=wj-(sy-H/2)/np; view.target=null; }
+function tweenTo(cx,cy,zoom){ view.target={ cx, cy, zoom:clampZoom(zoom) }; }
+function recenter(){ if(game.board.size===0){ tweenTo(0,0,1); return; } let sx=0,sy=0,n=0; for(const key of game.board.keys()){ sx+=decX(key); sy+=decY(key); n++; } tweenTo(sx/n,sy/n,Math.min(view.zoom<0.9?1:view.zoom,1.2)); }
+function ensureVisible(i,j){ const p=cellToScreen(i,j), m=110; if(p.x<m||p.x>W-m||p.y<m+70||p.y>H-m-70){ tweenTo(i,j,view.zoom); } }
+const easeOut=t=>1-Math.pow(1-t,3);
+
+function draw(t){
+  ctx.clearRect(0,0,W,H);
+  const bg=ctx.createLinearGradient(0,0,0,H); bg.addColorStop(0,'#ffffff'); bg.addColorStop(1,'#F5F5F7'); ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  const px=PX();
+  const iMin=Math.floor((0-W/2)/px+view.cx)-1, iMax=Math.ceil((W-W/2)/px+view.cx)+1;
+  const jMin=Math.floor((0-H/2)/px+view.cy)-1, jMax=Math.ceil((H-H/2)/px+view.cy)+1;
+  ctx.lineWidth=1;
+  for(let i=iMin;i<=iMax;i++){ const x=(i-view.cx)*px+W/2; ctx.strokeStyle=(i%5===0)?'rgba(0,0,0,0.10)':'rgba(0,0,0,0.05)'; ctx.beginPath(); ctx.moveTo(Math.round(x)+0.5,0); ctx.lineTo(Math.round(x)+0.5,H); ctx.stroke(); }
+  for(let j=jMin;j<=jMax;j++){ const y=(j-view.cy)*px+H/2; ctx.strokeStyle=(j%5===0)?'rgba(0,0,0,0.10)':'rgba(0,0,0,0.05)'; ctx.beginPath(); ctx.moveTo(0,Math.round(y)+0.5); ctx.lineTo(W,Math.round(y)+0.5); ctx.stroke(); }
+  if(0>=iMin&&0<=iMax&&0>=jMin&&0<=jMax){ const o=cellToScreen(0,0); ctx.save(); ctx.strokeStyle='rgba(0,0,0,0.22)'; ctx.lineWidth=1.25; ctx.beginPath(); ctx.arc(o.x,o.y,4.5,0,Math.PI*2); ctx.stroke(); ctx.restore(); }
+  if(hoverCell && !game.over && !game.thinking && game.turn===game.human && !game.board.has(Engine.k(hoverCell.i,hoverCell.j))){ const p=cellToScreen(hoverCell.i,hoverCell.j); drawStone(p.x,p.y,px*0.40,game.human,0.26); }
+  for(const [key,who] of game.board){ const i=decX(key), j=decY(key); if(i<iMin||i>iMax||j<jMin||j>jMax) continue; const p=cellToScreen(i,j); let r=px*0.40, a=1; const st=placeAnim.get(key); if(st!=null){ const kk=easeOut(Math.min(1,(t-st)/200)); r*=0.4+0.6*kk; a=kk; if(kk>=1) placeAnim.delete(key); } drawStone(p.x,p.y,r,who,a); }
+  if(game.history.length){ const last=game.history[game.history.length-1]; if(last.x>=iMin&&last.x<=iMax&&last.y>=jMin&&last.y<=jMax){ const p=cellToScreen(last.x,last.y); const pulse=0.5+0.5*Math.sin(t/420); ctx.save(); ctx.globalAlpha=0.35+0.4*pulse; ctx.strokeStyle=last.who===game.human?'rgba(10,132,255,0.85)':'rgba(60,60,67,0.8)'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(p.x,p.y,px*0.40+4+pulse*3,0,Math.PI*2); ctx.stroke(); ctx.restore(); } }
+  if(game.winLine){ const a=cellToScreen(game.winLine[0][0],game.winLine[0][1]); const b=cellToScreen(game.winLine[game.winLine.length-1][0],game.winLine[game.winLine.length-1][1]); const col=game.winner===game.human?'#0A84FF':'#1D1D1F'; const glow=game.winner===game.human?'rgba(10,132,255,0.35)':'rgba(0,0,0,0.25)'; ctx.save(); ctx.shadowColor=glow; ctx.shadowBlur=10; ctx.strokeStyle=col; ctx.lineWidth=Math.max(3,px*0.09); ctx.lineCap='round'; ctx.globalAlpha=0.9; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.restore(); }
+}
+function drawStone(sx,sy,r,who,alpha){
+  const you=who===game.human;
+  // 你：系统蓝；AI：墨灰石。柔和投影 + 左上高光，无霓虹。
+  const hi   = you ? '#7FB6F2' : '#6E6E73';
+  const core = you ? '#0A84FF' : '#3A3A3C';
+  const deep = you ? '#0058B0' : '#1A1A1C';
+  ctx.save(); ctx.globalAlpha=alpha;
+  ctx.shadowColor='rgba(0,0,0,0.20)'; ctx.shadowBlur=r*0.42; ctx.shadowOffsetY=r*0.10;
+  const g=ctx.createRadialGradient(sx-r*0.34,sy-r*0.40,r*0.08,sx,sy,r*1.02);
+  g.addColorStop(0,hi); g.addColorStop(0.46,core); g.addColorStop(1,deep);
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(sx,sy,r,0,Math.PI*2); ctx.fill();
+  // 细腻的高光弧（玻璃质感），无外发光
+  ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  ctx.globalAlpha=alpha*0.55; ctx.lineWidth=Math.max(0.8,r*0.07); ctx.strokeStyle='rgba(255,255,255,0.55)';
+  ctx.beginPath(); ctx.arc(sx-r*0.06,sy-r*0.08,r*0.72,Math.PI*1.05,Math.PI*1.75); ctx.stroke();
+  ctx.restore();
+}
+function frame(t){
+  if(view.target){ view.cx+=(view.target.cx-view.cx)*0.18; view.cy+=(view.target.cy-view.cy)*0.18; view.zoom+=(view.target.zoom-view.zoom)*0.18;
+    if(Math.abs(view.target.cx-view.cx)<0.0015&&Math.abs(view.target.cy-view.cy)<0.0015&&Math.abs(view.target.zoom-view.zoom)<0.0015){ view.cx=view.target.cx; view.cy=view.target.cy; view.zoom=view.target.zoom; view.target=null; } }
+  draw(t); requestAnimationFrame(frame);
+}
+
+/* ====== 交互：单指平移 / 双指缩放 / 点按落子 / 滚轮 / 悬停 ====== */
+const pointers=new Map(); let gesture=null, pinch=null;
+canvas.addEventListener('pointerdown', e=>{ canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===1){ gesture={ sx:e.clientX, sy:e.clientY, t:performance.now(), multi:false }; } else if(pointers.size===2){ if(gesture) gesture.multi=true; startPinch(); } });
+canvas.addEventListener('pointermove', e=>{ if(!pointers.has(e.pointerId)){ if(e.pointerType==='mouse'&&e.buttons===0){ hoverCell=screenToCell(e.clientX,e.clientY); } return; }
+  const p=pointers.get(e.pointerId); const pdx=e.clientX-p.x, pdy=e.clientY-p.y; p.x=e.clientX; p.y=e.clientY;
+  if(pointers.size>=2){ updatePinch(); return; } if(pointers.size===1) panBy(pdx,pdy); });
+function endPointer(e){ const was=pointers.size; pointers.delete(e.pointerId);
+  if(was===1 && gesture && !gesture.multi){ const dist=Math.hypot(e.clientX-gesture.sx,e.clientY-gesture.sy); const dt=performance.now()-gesture.t; if(dist<9&&dt<400){ const c=screenToCell(e.clientX,e.clientY); humanPlay(c.i,c.j); } }
+  if(pointers.size<2) pinch=null; if(pointers.size===0) gesture=null; }
+canvas.addEventListener('pointerup', endPointer); canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', e=>{ if(e.pointerType==='mouse') hoverCell=null; });
+function startPinch(){ const a=[...pointers.values()]; pinch={ d:Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y), mx:(a[0].x+a[1].x)/2, my:(a[0].y+a[1].y)/2 }; }
+function updatePinch(){ if(!pinch){ startPinch(); return; } const a=[...pointers.values()]; const d=Math.hypot(a[1].x-a[0].x,a[1].y-a[0].y); const mx=(a[0].x+a[1].x)/2, my=(a[0].y+a[1].y)/2; zoomAt(mx,my,d/(pinch.d||d)); panBy(mx-pinch.mx,my-pinch.my); pinch={ d, mx, my }; }
+canvas.addEventListener('wheel', e=>{ e.preventDefault(); zoomAt(e.clientX,e.clientY,Math.exp(-e.deltaY*0.0015)); }, {passive:false});
+
+/* ====== 对局流程 ====== */
+const island=document.getElementById('island'), islandLabel=document.getElementById('islandLabel'), thinkLabel=document.getElementById('thinkLabel');
+
+function place(i,j,who){ const e=Engine.k(i,j); game.board.set(e,who); game.history.push({x:i,y:j,who}); placeAnim.set(e,performance.now()); }
+
+function humanPlay(i,j){
+  if(game.over||game.thinking||game.turn!==game.human) return;
+  if(game.board.has(Engine.k(i,j))) return;
+  hoverCell=null; place(i,j,game.human);
+  const win=Engine.checkWin(game.board,i,j,game.human);
+  if(win){ endGame(game.human, win); return; }
+  game.turn=game.ai; requestAI();
+}
+
+function requestAI(){
+  game.thinking=true; setIsland('thinking');
+  const reqId=++game.aiReqId; const t0=performance.now(); const minDelay=320;
+  const stones=[...game.board.entries()];
+  const cfg=currentCfg();
+  const g=computeHint(game.board, game.ai, game.human); cfg.hint=g.hint; game.lastGpu=g;
+  const lastHuman = game.history.length ? [game.history[game.history.length-1].x, game.history[game.history.length-1].y] : null;
+  const onResult=(res)=>{ if(res.reqId!==game.aiReqId) return; const wait=Math.max(0,minDelay-(performance.now()-t0)); setTimeout(()=>applyAI(res,g),wait); };
+  if(worker){ pendingResolve=onResult; worker.postMessage({cmd:'move', stones, me:game.ai, opp:game.human, cfg, reqId, lastHuman}); }
+  else { setTimeout(()=>{ const r=Engine.bestMove(game.board, game.ai, game.human, Object.assign({},cfg,{timeMs:Math.min(cfg.timeMs,450)})); onResult({reqId, move:r.move, tag:r.tag, depth:r.depth, ponderHit:false, ms:0}); }, 12); }
+}
+function applyAI(res, gpu){
+  if(res.reqId!==game.aiReqId) return;
+  game.thinking=false;
+  let [i,j]=res.move;
+  if(game.board.has(Engine.k(i,j))){ // 安全兜底：极少数占位冲突，另寻空点
+    outer: for(let r=1;r<6;r++) for(let dx=-r;dx<=r;dx++) for(let dy=-r;dy<=r;dy++){ if(!game.board.has(Engine.k(i+dx,j+dy))){ i+=dx; j+=dy; break outer; } }
+  }
+  place(i,j,game.ai); ensureVisible(i,j); showHud(res,gpu);
+  const win=Engine.checkWin(game.board,i,j,game.ai);
+  if(win){ endGame(game.ai, win); return; }
+  game.turn=game.human; setIsland('turn-human'); startPonder();
+  maybeTaunt(res);
+}
+function startPonder(){ if(!worker||game.over||game.board.size===0) return; worker.postMessage({cmd:'ponder', stones:[...game.board.entries()], human:game.human, ai:game.ai, cfg:currentCfg()}); }
+
+function endGame(winner, line){
+  game.over=true; game.winner=winner; game.winLine=line; game.thinking=false;
+  const human=winner===game.human;
+  island.dataset.state=human?'win-human':'win-ai'; island.dataset.side=human?'human':'ai';
+  document.getElementById('resultTitle').textContent=human?'你赢了':'AI 获胜';
+  document.getElementById('resultSub').textContent='五子连珠 · 第 '+game.history.length+' 手';
+  document.getElementById('resultBadge').innerHTML=human
+    ? '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12l3 3 5-6"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>';
+  island.classList.remove('pop'); void island.offsetWidth; island.classList.add('pop');
+  hideHud();
+  setTimeout(()=>showTaunt(pickT(human?TAUNTS.playerwin:TAUNTS.aiwin), true), 620);
+  // —— 自学习：从本局学习（败局重点学习玩家下法），并持久化网络权重 ——
+  try{
+    const lr = nnLearnFromGame();
+    if(lr){
+      const st = NN.stats();
+      const tag = human ? '从你的胜局中学习' : '巩固获胜策略';
+      setTimeout(()=>toast(`🧠 ${tag} · 已训练 ${st.games} 局 (v${st.version})`), 1400);
+    }
+  }catch(e){}
+}
+function setIsland(state){
+  island.dataset.state=state;
+  if(state==='turn-human'){ island.dataset.side='human'; islandLabel.textContent='轮到你落子'; }
+  if(state==='thinking'){ island.dataset.side='ai'; thinkLabel.textContent=game.transcend?'超越演算中':'推演中'; }
+  island.classList.remove('pop'); void island.offsetWidth; island.classList.add('pop');
+}
+
+function newGame(){
+  game.aiReqId++; pendingResolve=null; game.thinking=false;
+  game.board.clear(); game.history=[]; placeAnim.clear();
+  game.over=false; game.winner=null; game.winLine=null;
+  game.turn=game.human;
+  tweenTo(0,0,1); setIsland('turn-human'); hideHud(); hideTaunt();
+}
+
+/* ====== 控件：Dock 状态机 / 超越切换 / 重开 ====== */
+const dock=document.getElementById('dock'), fab=document.getElementById('fabBtn');
+function toggleDock(){ const open=dock.dataset.variant==='toolbar'; dock.dataset.variant=open?'single':'toolbar'; fab.setAttribute('aria-label',open?'展开工具栏':'收起工具栏'); dock.classList.remove('morph'); void dock.offsetWidth; dock.classList.add('morph'); }
+fab.addEventListener('click', toggleDock);
+dock.querySelectorAll('.tool').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const act=btn.dataset.act;
+    if(act==='center'){ recenter(); toast('已回到中心'); }
+    else if(act==='restart'){ newGame(); toast('新对局'); }
+    else if(act==='transcend') toggleTranscend();
+  });
+});
+function toggleTranscend(){
+  game.transcend=!game.transcend;
+  document.body.classList.toggle('transcend', game.transcend);
+  const btn=dock.querySelector('[data-act="transcend"]'); btn.setAttribute('aria-pressed', String(game.transcend));
+  if(game.thinking) setIsland('thinking');
+  toast(game.transcend ? '超越模式 · 多重算法已启用' : '超越模式 · 已关闭');
+}
+document.getElementById('againBtn').addEventListener('click', newGame);
+
+/* ====== HUD / Toast ====== */
+const hud=document.getElementById('hud'), hudText=document.getElementById('hudText');
+let hudTimer=null;
+function showHud(res, gpu){
+  const parts=[];
+  if(res.ponderHit) parts.push('预演命中');
+  if(res.tag==='vct') parts.push('算杀·VCT'); else if(res.tag==='vcf') parts.push('算杀·VCF');
+  else if(res.tag==='vctDef') parts.push('反杀·VCT'); else if(res.tag==='counter') parts.push('反先·抢攻');
+  else if(res.tag==='attack') parts.push('双威胁'); else if(res.tag==='defend'||res.tag==='block5'||res.tag==='vcfDef') parts.push('封防');
+  else if(res.tag==='ponder') parts.push('预演直出'); else if(res.depth) parts.push('搜索深度 '+res.depth);
+  parts.push((gpu&&gpu.gpu?'GPU':'CPU')+' 评估 '+(gpu?gpu.count:0)+' 点');
+  // 神经网络价值（多位置预测）：展示首选点的网络价值与已学局数
+  if(gpu && gpu.nn && gpu.top && gpu.top.length){
+    const tv = gpu.top[0].nn;
+    if(typeof tv==='number') parts.push((nnGpuReady?'GPU网络':'网络')+' 价值 '+(tv>=0?'+':'')+tv.toFixed(2));
+  }
+  parts.push(res.ms+'ms');
+  hudText.innerHTML=(worker?'<b>多线程</b> · ':'<b>主线程</b> · ')+parts.join(' · ');
+  showHudEl();
+}
+function showHudEl(){ hud.classList.add('show'); clearTimeout(hudTimer); hudTimer=setTimeout(()=>hud.classList.remove('show'), 2600); }
+function hideHud(){ hud.classList.remove('show'); }
+
+let toastTimer=null; const toastEl=document.getElementById('toast');
+function toast(msg){ toastEl.textContent=msg; toastEl.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>toastEl.classList.remove('show'),1500); }
+
+/* ====== AI 嘲讽台词（诙谐 / 嘲讽 / 自负 / 调侃）====== */
+const TAUNTS={
+  kill:[ '结局已经写好了，你只是还没翻到最后一页。','这几步我半秒前就算完了，现在在等你领悟。',
+    '要不要我先把“我赢了”打出来，省得你等？','你还在想第一步，我已经在想庆功词了。',
+    '别挣扎了，挣扎只会让棋谱更难看。','我看到五步之后了——剧透：你不在里面。' ],
+  attack:[ '接得住这手，算我今天没睡醒。','我开始认真了。哦不对，我从没不认真。',
+    '给你留了条活路，赌你找不到。','这是道送分题，可惜你没带笔。' ],
+  predict:[ '我猜你会下这儿。看，毫无想象力。','跟我预演的一模一样，你的脑回路真好懂。',
+    '你的下一步写在脸上了——虽然我没有脸。','意料之中，无聊得我差点睡着。' ],
+  block:[ '就这？我还以为你要搞个大新闻。','你的进攻像满格 WiFi——就是连不上网。',
+    '这点心思，挡下来都觉得浪费 CPU。','再想想？我不累，我有的是时钟周期。',
+    '这一手是手滑了吧？我替你保密。','努力是好事，可惜方向反了。' ],
+  banter:[ '我用了 0.5 秒落子，剩下时间在同情你。','棋盘是无限的，但你的胜算是有限的——准确说是 0。',
+    '你思考的样子很认真，我欣赏这种徒劳的美。','这局唯一的悬念，是你第几手会想放弃。',
+    '要不要先深呼吸？反正结果也不会变。','别紧张，输给我又不是什么稀奇事。' ],
+  aiwin:[ 'GG。要不要再来一局，体验一模一样的剧情？','五子连珠，和我预料的分毫不差。意外吗？不意外。',
+    '输给我不丢人，毕竟……大家都这样。','这就完了？我还没热身呢。','把这局存下来吧，当作“我努力过”的纪念。' ],
+  playerwin:[ '……行吧，算你走运。再来一局，我把运气没收。','什么？我重算一遍——好，好，你赢了。下不为例。',
+    '记住这一刻，因为它不会发生第二次。','这局我让的。真的。你愿意信吗？','恭喜，你赢得了重赛的资格。' ],
+};
+let lastTaunt='', tauntTimer=null;
+function pickT(arr){ let s; do{ s=arr[Math.floor(Math.random()*arr.length)]; }while(arr.length>1 && s===lastTaunt); lastTaunt=s; return s; }
+function showTaunt(text, low){
+  document.getElementById('tauntText').textContent=text;
+  const t=document.getElementById('taunt'); t.classList.toggle('low', !!low); t.classList.add('show');
+  clearTimeout(tauntTimer); tauntTimer=setTimeout(()=>t.classList.remove('show'), low?5400:3700);
+}
+function hideTaunt(){ const t=document.getElementById('taunt'); t.classList.remove('show'); }
+function maybeTaunt(res){
+  let cat=null, p=1;
+  if(res.tag==='vcf'||res.tag==='vct'||res.tag==='vctDef'){ cat='kill'; p=1; }
+  else if(res.tag==='attack'||res.tag==='counter'){ cat='attack'; p=0.85; }
+  else if(res.tag==='ponder'){ cat='predict'; p=0.9; }
+  else if(res.tag==='defend'||res.tag==='block5'||res.tag==='vcfDef'){ cat='block'; p=0.55; }
+  else if(res.tag==='search'){ cat='banter'; p=0.30; }
+  if(cat && Math.random()<p) showTaunt(pickT(TAUNTS[cat]), false);
+}
+
+/* ====== 启动 ====== */
+resize(); requestAnimationFrame(frame); setIsland('turn-human');
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) hoverCell=null; });
+setTimeout(()=>toast('点按落子 · 拖动平移 · 双指缩放'), 500);
+// 载入已持久化的网络权重（跨会话累积的自学习成果），再刷新状态 HUD
+(async ()=>{
+  let loaded=false;
+  try{ loaded = await nnLoadPersisted(); }catch(e){}
+  const st = NN.stats();
+  const nnMode = (nnGpuReady?'GPU 神经网络':'神经网络') + (loaded?` · 已学 ${st.games} 局`:' · 全新');
+  const mode = (worker?'多线程':'单线程') + ' · ' + (gpuReady?'GPU 评分':'CPU 评分') + ' · ' + nnMode;
+  hudText.innerHTML='<b>超越模式就绪</b> · '+mode+' · 玩家先手 · 你执蓝';
+  showHudEl();
+})();
+</script>
+</body>
+</html>
